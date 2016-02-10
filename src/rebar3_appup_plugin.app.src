@@ -1,0 +1,15 @@
+{application, rebar3_appup_plugin, [
+        {description, "A rebar3 plugin for handling .appup files"},
+        {vsn, "1.0.0"},
+        {registered, []},
+        {applications,
+            [
+                kernel,
+                stdlib
+            ]},
+        {env,[]},
+        {modules, []},
+        {maintainers, ["Luis Rascao"]},
+        {licenses, ["MIT"]},
+        {links, [{"Github", "https://github.com/lrascao/rebar3_appup_plugin"}]}
+    ]}.
