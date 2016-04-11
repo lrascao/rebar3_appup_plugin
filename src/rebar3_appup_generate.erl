@@ -65,7 +65,7 @@ do(State) ->
         [PreviousName, PreviousVer]),
     {CurrentName, CurrentVer} = rebar3_appup_rel_utils:get_rel_release_info(
                                             Name, CurrentRelPath),
-    rebar_api:debug("previous release, name: ~p, version: ~p",
+    rebar_api:debug("current release, name: ~p, version: ~p",
         [CurrentName, CurrentVer]),
 
     ModDeps = [],
