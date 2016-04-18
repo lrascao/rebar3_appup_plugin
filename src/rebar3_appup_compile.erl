@@ -35,13 +35,9 @@ do(State) ->
            end,
     lists:foreach(fun(AppInfo) ->
         Opts = rebar_app_info:opts(AppInfo),
-        SrcDirs = rebar_dir:src_dirs(Opts, ["src"]),
-        rebar_base_compiler:run(Opts, [],
-                                SrcDirs, ".appup.src",
-                                rebar_app_info:ebin_dir(AppInfo), ".appup",
-                                fun(Source, Target, Config) ->
-                                    compile(Source, Target, Config)
-                                end)
+        SrcDir = appup_file_src(AppInfo),
+	TargetDir = appup_file_target(AppInfo),
+	compile(SrcDir, TargetDir, Opts)
     end, Apps),
     {ok, State}.
 
@@ -69,8 +65,20 @@ compile(Source, Target, _Config) ->
                            [Target, Reason]);
                 ok -> ok
             end;
-        {error, Reason} ->
+        {error, enoent} ->
+            rebar_api:warn("Failed to compile: file ~p not found~n", [Source]);
+	{error, Reason} ->
             rebar_api:abort("Failed to compile ~s: ~p~n", [Source, Reason]);
         _ ->
             rebar_api:abort("Failed to compile ~s, not an appup~n", [Source])
     end.
+
+appup_file_src(AppInfo) ->
+    Dir = rebar_app_info:dir(AppInfo),
+    Name = rebar_app_info:name(AppInfo),
+    filename:join([Dir, "src", ec_cnv:to_list(Name) ++ ".appup.src"]).
+
+appup_file_target(AppInfo) ->
+    OutDir = rebar_app_info:ebin_dir(AppInfo),
+    Name = rebar_app_info:name(AppInfo),
+    filename:join(OutDir, ec_cnv:to_list(Name) ++ ".appup").
