@@ -233,7 +233,8 @@ get_behavior(List) ->
 
 is_code_change(List) ->
     Exports = proplists:get_value(exports, List),
-    case proplists:is_defined(code_change, Exports) of
+    case proplists:is_defined(code_change, Exports) orelse
+        proplists:is_defined(system_code_change, Exports) of
         true ->
             code_change;
         false ->
