@@ -65,7 +65,7 @@ do(State) ->
         [PreviousName, PreviousVer]),
     {CurrentName, CurrentVer} = rebar3_appup_rel_utils:get_rel_release_info(
                                             Name, CurrentRelPath),
-    rebar_api:debug("previous release, name: ~p, version: ~p",
+    rebar_api:debug("current release, name: ~p, version: ~p",
         [CurrentName, CurrentVer]),
 
     ModDeps = [],
@@ -206,15 +206,15 @@ generate_instruction(deleted, File) ->
 
 generate_instruction(changed, ModDeps, {File, _}) ->
     {ok, {Name, List}} = beam_lib:chunks(File, [attributes, exports]),
-    Behavior = get_behavior(List),
+    Supervisor = is_supervisor(List),
     CodeChange = is_code_change(List),
     Deps = proplists:get_value(Name, ModDeps, []),
-    generate_instruction_advanced(Name, Behavior, CodeChange, Deps).
+    generate_instruction_advanced(Name, Supervisor, CodeChange, Deps).
 
 generate_instruction_advanced(Name, undefined, undefined, Deps) ->
     %% Not a behavior or code change, assume purely functional
     {load_module, Name, Deps};
-generate_instruction_advanced(Name, [supervisor], _, _) ->
+generate_instruction_advanced(Name, supervisor, _, _) ->
     %% Supervisor
     {update, Name, supervisor};
 generate_instruction_advanced(Name, _, code_change, Deps) ->
@@ -226,9 +226,14 @@ generate_instruction_advanced(Name, _, _, Deps) ->
 
 get_behavior(List) ->
     Attributes = proplists:get_value(attributes, List),
-    case proplists:get_value(behavior, Attributes) of
-        undefined -> proplists:get_value(behaviour, Attributes);
-        Else -> Else
+    proplists:get_value(behavior, Attributes, []) ++ proplists:get_value(behaviour, Attributes, []).
+
+is_supervisor(List) ->
+    case lists:member(supervisor, get_behavior(List)) of
+        true ->
+            supervisor;
+        false ->
+            undefined
     end.
 
 is_code_change(List) ->
