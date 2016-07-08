@@ -66,7 +66,7 @@ compile(Source, Target, _Config) ->
                 ok -> ok
             end;
         {error, enoent} ->
-            rebar_api:warn("Failed to compile: file ~p not found~n", [Source]);
+            rebar_api:info("Missing file: ~p, skipping~n", [Source]);
 	{error, Reason} ->
             rebar_api:abort("Failed to compile ~s: ~p~n", [Source, Reason]);
         _ ->
