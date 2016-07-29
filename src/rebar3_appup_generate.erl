@@ -24,6 +24,7 @@ init(State) ->
             {deps, ?DEPS},                % The list of dependencies
             {opts, [                      % list of options understood by the plugin
                 {previous, $p, "previous", string, "location of the previous release"},
+                {previous_version, $p, "previous_version", string, "version of the previous release"},
                 {current, $c, "current", string, "location of the current release"},
                 {target_dir, $t, "target_dir", string, "target dir in which to generate the .appups to"}
             ]},
@@ -59,8 +60,14 @@ do(State) ->
     rebar_api:debug("current release: ~p~n", [CurrentRelPath]),
     rebar_api:debug("target dir: ~p~n", [TargetDir]),
 
-    {PreviousName, PreviousVer} = rebar3_appup_rel_utils:get_rel_release_info(
+    %% deduce the previous version from the release path
+    {PreviousName, PreviousVer0} = rebar3_appup_rel_utils:get_rel_release_info(
                                             Name, PreviousRelPath),
+    %% if a specific one was requested use that instead
+    PreviousVer = case proplists:get_value(previous_version, Opts, undefined) of
+                    undefined -> PreviousVer0;
+                    V -> V
+                  end,
     rebar_api:debug("previous release, name: ~p, version: ~p",
         [PreviousName, PreviousVer]),
     {CurrentName, CurrentVer} = rebar3_appup_rel_utils:get_rel_release_info(
@@ -79,7 +86,9 @@ do(State) ->
                       [CurrentName, PreviousName]),
 
     %% Find all the apps that have been upgraded
-    {_Added, _Removed, Upgraded} = get_apps(Name, PreviousRelPath, CurrentRelPath),
+    {_Added, _Removed, Upgraded} = get_apps(Name,
+                                            PreviousRelPath, PreviousVer,
+                                            CurrentRelPath, CurrentVer),
 
     %% Get a list of any appup files that exist in the current release
     CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
@@ -107,11 +116,11 @@ format_error(Reason) ->
 %% ===================================================================
 %% Private API
 %% ===================================================================
-get_apps(Name, OldVerPath, NewVerPath) ->
-    OldApps = rebar3_appup_rel_utils:get_rel_apps(Name, OldVerPath),
+get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
+    OldApps = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
     rebar_api:debug("previous version apps: ~p~n", [OldApps]),
 
-    NewApps = rebar3_appup_rel_utils:get_rel_apps(Name, NewVerPath),
+    NewApps = rebar3_appup_rel_utils:get_rel_apps(Name, NewVer, NewVerPath),
     rebar_api:debug("current version apps: ~p~n", [NewApps]),
 
     Added = app_list_diff(NewApps, OldApps),

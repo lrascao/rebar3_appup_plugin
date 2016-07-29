@@ -3,7 +3,7 @@
 -export([get_permanent_version/1,
          get_rel_file_path/2, get_rel_file_path/3,
          get_rel_release_info/1, get_rel_release_info/2,
-         get_rel_apps/1, get_rel_apps/2]).
+         get_rel_apps/1, get_rel_apps/2, get_rel_apps/3]).
 
 %% get permanent version from start_erl.data
 get_permanent_version(Path) ->
@@ -46,6 +46,11 @@ get_rel_release_info(RelFile) ->
         _ ->
             rebar_api:abort("Failed to parse ~s~n", [RelFile])
     end.
+
+%% Get list of apps included in a release from a name, a path and a version
+get_rel_apps(Name, Version, Path) ->
+    RelPath = get_rel_file_path(Name, Path, Version),
+    get_rel_apps(RelPath).
 
 %% Get list of apps included in a release from a name and a path
 get_rel_apps(Name, Path) ->
