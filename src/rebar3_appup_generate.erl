@@ -105,7 +105,8 @@ do(State) ->
     %% Generate appup files for upgraded apps
     generate_appup_files(TargetDir,
                          CurrentRelPath, PreviousRelPath,
-                         ModDeps, UpgradeApps),
+                         ModDeps, UpgradeApps,
+                         State),
 
     {ok, State}.
 
@@ -165,18 +166,23 @@ gen_appup_which_apps(Apps, []) ->
 
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
-                     ModDeps, [{_App, {undefined, _}}|Rest]) ->
-    generate_appup_files(TargetDir, NewVerPath, OldVerPath, ModDeps, Rest);
+                     ModDeps, [{_App, {undefined, _}}|Rest],
+                     State) ->
+    generate_appup_files(TargetDir, NewVerPath, OldVerPath, ModDeps, Rest, State);
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
-                     ModDeps, [{App, {OldVer, NewVer}}|Rest]) ->
-    OldEbinDir = filename:join([OldVerPath, "lib",
+                     ModDeps, [{App, {OldVer, NewVer}}|Rest],
+                     State) ->
+    CurrentBaseDir = rebar_dir:base_dir(State),
+    AppEbinDir = filename:join([CurrentBaseDir, "lib",
+                                atom_to_list(App), "ebin"]),
+    OldRelEbinDir = filename:join([OldVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ OldVer, "ebin"]),
-    NewEbinDir = filename:join([NewVerPath, "lib",
+    NewRelEbinDir = filename:join([NewVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ NewVer, "ebin"]),
 
-    {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewEbinDir,
-                                                                 OldEbinDir),
+    {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
+                                                                 OldRelEbinDir),
 
     ChangedNames = [list_to_atom(file_to_name(F)) || {F, _} <- ChangedFiles],
     ModDeps1 = [{N, [M1 || M1 <- M, lists:member(M1, ChangedNames)]}
@@ -189,22 +195,30 @@ generate_appup_files(TargetDir,
 
     Inst = lists:append([Added, Deleted, Changed]),
 
-    AppUpFile = case TargetDir of
+    AppUpFiles = case TargetDir of
                     undefined ->
-                        filename:join([NewEbinDir, atom_to_list(App) ++ ".appup"]);
+                        RelAppup = filename:join([NewRelEbinDir,
+                                                  atom_to_list(App) ++ ".appup"]),
+                        EbinAppup = filename:join([AppEbinDir,
+                                                   atom_to_list(App) ++ ".appup"]),
+                        [RelAppup, EbinAppup];
                     _ ->
-                        filename:join([TargetDir, atom_to_list(App) ++ ".appup"])
-                end,
+                        [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
+                 end,
 
-    ok = file:write_file(AppUpFile,
-                         io_lib:fwrite(?APPUPFILEFORMAT,
-                                       [App, rebar3_appup_utils:now_str(),
-                                        NewVer, OldVer, Inst, OldVer])),
-
-    rebar_api:console("Generated appup for ~p in ~s~n",
-        [App, AppUpFile]),
-    generate_appup_files(TargetDir, NewVerPath, OldVerPath, ModDeps, Rest);
-generate_appup_files(_, _, _, _, []) -> ok.
+    rebar_api:console("Generating appup for ~p in ~p~n",
+        [App, AppUpFiles]),
+    %% write each of the .appup files
+    lists:foreach(fun(AppUpFile) ->
+                    ok = file:write_file(AppUpFile,
+                                         io_lib:fwrite(?APPUPFILEFORMAT,
+                                                       [App, rebar3_appup_utils:now_str(),
+                                                        NewVer, OldVer, Inst, OldVer])),
+                    rebar_api:console("Generated appup for ~p in ~p~n",
+                        [App, AppUpFile])
+                  end, AppUpFiles),
+    generate_appup_files(TargetDir, NewVerPath, OldVerPath, ModDeps, Rest, State);
+generate_appup_files(_, _, _, _, [], _) -> ok.
 
 generate_instruction(added, File) ->
     Name = list_to_atom(file_to_name(File)),
