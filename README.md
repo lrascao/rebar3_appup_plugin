@@ -1,5 +1,8 @@
-rebar3_appup_plugin
+rebar3 appup plugin
 =====
+
+[![Build Status](https://travis-ci.org/lrascao/rebar3_appup_plugin.svg?branch=develop)](https://travis-ci.org/lrascao/rebar3_appup_plugin)
+[![hex.pm version](https://img.shields.io/hexpm/v/rebar3_appup_plugin.svg)](https://hex.pm/packages/rebar3_appup_plugin)
 
 A rebar3 plugin for handling .appup files. Contains the instructions necessary to upgrade from one release to another.
 

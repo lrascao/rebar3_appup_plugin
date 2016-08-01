@@ -8,7 +8,7 @@
 -define(DEPS, [{default, tar}]).
 
 -define(DEFAULT_RELEASE_DIR, "rel").
--define(TEMPLATE_DIR, "template").
+-define(PRIV_DIR, "priv").
 -define(CONVERT_TEMPLATE, "convert").
 -define(CONVERT_CALL_TEMPLATE, "convert_call").
 
@@ -168,6 +168,10 @@ state_record_info(_Module, RecordName, Forms) ->
         lists:mapfoldl(fun({record_field, _L1, RecordFieldName}, Acc) ->
                             {{abst_atom_name(RecordFieldName), Acc}, Acc + 1};
                           ({record_field, _L1, RecordFieldName, _}, Acc) ->
+                            {{abst_atom_name(RecordFieldName), Acc}, Acc + 1};
+                          ({typed_record_field, {record_field, _L1, RecordFieldName}, _}, Acc) ->
+                            {{abst_atom_name(RecordFieldName), Acc}, Acc + 1};
+                          ({typed_record_field, {record_field, _L1, RecordFieldName, _}, _}, Acc) ->
                             {{abst_atom_name(RecordFieldName), Acc}, Acc + 1}
                        end, 2, Fields),
     L.
@@ -217,7 +221,7 @@ do_state_record_migration(Module,
     % inject the method that converts from one record to the other
     %% build the required arguments for the mustache template
     {ok, ConvertTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
-                                                          ?TEMPLATE_DIR, ?CONVERT_TEMPLATE])),
+                                                          ?PRIV_DIR, ?CONVERT_TEMPLATE])),
     FromRecordFields = proplists:get_value(state_record_fields, FromData),
     ToRecordFields = proplists:get_value(state_record_fields, ToData),
     Module = proplists:get_value(module, ToData),
@@ -311,7 +315,7 @@ inject_code_change_clause({clause, L, Args0, [], Body0}, Opts) ->
     Args = [Arg1, {var, L0, 'State0'}, {var, L1, 'Extra0'}],
     %% now inject the beginning of the body with a call to our convert method
     {ok, ConvertCallTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
-                                                              ?TEMPLATE_DIR,
+                                                              ?PRIV_DIR,
                                                               ?CONVERT_CALL_TEMPLATE])),
     ConvertCallCtx = dict:from_list([{state_var, atom_to_list(StateVar)},
                                      {extra_var, atom_to_list(ExtraVar)}]),
