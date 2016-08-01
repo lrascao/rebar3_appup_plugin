@@ -124,13 +124,15 @@ format_error(Reason) ->
 %% ===================================================================
 deduce_previous_version(Name, CurrentVersion, RelPath) ->
     Versions = rebar3_appup_rel_utils:get_release_versions(Name, RelPath),
-    io:format("Versions: ~p\n", [Versions]),
-    case length(Versions) > 2 of
-        true ->
+    case length(Versions) of
+        N when N =:= 1 ->
+            rebar_api:abort("only 1 version is present in ~p (~p) expecting at least 2",
+                [RelPath, Versions]);
+        N when N =:= 2 ->
+            hd(Versions -- [CurrentVersion]);
+        N when N > 2 ->
             rebar_api:abort("more than 2 versions are present in ~p, please use the --previous_version "
-                            "option to choose which version to upgrade from: ~p", [RelPath, Versions]);
-        false ->
-            hd(Versions -- [CurrentVersion])
+                            "option to choose which version to upgrade from: ~p", [RelPath, Versions])
     end.
 
 get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
@@ -240,8 +242,8 @@ write_appup(App, OldVer, NewVer, TargetDir,
                                                         NewVer,
                                                         OldVer, UpgradeInstructions,
                                                         OldVer, DowngradeInstructions])),
-                    rebar_api:info("Generated appup for ~p in ~p",
-                        [App, AppUpFile])
+                    rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
+                        [OldVer, NewVer, App, AppUpFile])
                   end, AppUpFiles),
     ok.
 
