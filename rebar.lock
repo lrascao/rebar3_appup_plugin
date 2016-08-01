@@ -1,1 +1,8 @@
-[].
+[{<<"meck">>,
+  {git,"https://github.com/eproxus/meck.git",
+       {ref,"c772db17a7c94e75d20688197f61538d63fe2ae9"}},
+  1},
+ {<<"mustache">>,
+  {git,"git://github.com/mojombo/mustache.erl.git",
+       {ref,"5ac1f216f7db5c16f441235b9008050d7c2ffd55"}},
+  0}].
