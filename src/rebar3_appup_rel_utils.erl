@@ -3,7 +3,9 @@
 -export([get_permanent_version/1,
          get_rel_file_path/2, get_rel_file_path/3,
          get_rel_release_info/1, get_rel_release_info/2,
-         get_rel_apps/1, get_rel_apps/2, get_rel_apps/3]).
+         get_rel_apps/1, get_rel_apps/2, get_rel_apps/3,
+         get_rel_releases_path/2,
+         get_release_versions/2]).
 
 %% get permanent version from start_erl.data
 get_permanent_version(Path) ->
@@ -24,7 +26,7 @@ get_rel_file_path(Name, Path) ->
     get_rel_file_path(Name, Path, PVer).
 
 get_rel_file_path(Name, Path, Version) ->
-    Dir = filename:join([Path, "releases", Version]),
+    Dir = filename:join([get_rel_releases_path(Name, Path), Version]),
     Path1 = filename:join([Dir, Name ++ "_" ++ Version ++".rel"]),
     Path2 = filename:join([Dir, Name ++ ".rel"]),
     case {filelib:is_file(Path1), filelib:is_file(Path2)} of
@@ -32,6 +34,9 @@ get_rel_file_path(Name, Path, Version) ->
         {_, true} -> Path2;
         _ -> rebar_api:abort("can not find .rel file for version ~p~n", [Version])
     end.
+
+get_rel_releases_path(_Name, Path) ->
+    filename:join([Path, "releases"]).
 
 %% Get release name and version from a name and a path
 get_rel_release_info(Name, Path) ->
@@ -46,6 +51,12 @@ get_rel_release_info(RelFile) ->
         _ ->
             rebar_api:abort("Failed to parse ~s~n", [RelFile])
     end.
+
+get_release_versions(Name, Path) ->
+    RelPath = get_rel_releases_path(Name, Path),
+    lists:map(fun(Dir) ->
+                filename:basename(Dir)
+              end, rebar3_appup_utils:get_sub_dirs(RelPath)).
 
 %% Get list of apps included in a release from a name, a path and a version
 get_rel_apps(Name, Version, Path) ->

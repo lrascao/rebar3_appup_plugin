@@ -4,7 +4,8 @@
          make_proplist/2,
          find_files/3,
          find_files_by_ext/2, find_files_by_ext/3,
-         now_str/0]).
+         now_str/0,
+         get_sub_dirs/1]).
 
 %% Helper function for checking values and aborting when needed
 prop_check(true, _, _) -> true;
@@ -49,3 +50,11 @@ now_str() ->
     {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:local_time(),
     lists:flatten(io_lib:format("~4b/~2..0b/~2..0b ~2..0b:~2..0b:~2..0b",
                                 [Year, Month, Day, Hour, Minute, Second])).
+
+get_sub_dirs(Dir) ->
+    lists:filtermap(fun(SubDir) ->
+                        case filelib:is_dir(SubDir) of
+                            true -> {true, SubDir};
+                            false -> false
+                        end
+                    end, filelib:wildcard(filename:join(Dir, "*"))).
