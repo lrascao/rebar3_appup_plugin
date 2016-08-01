@@ -1,6 +1,6 @@
 {application, rebar3_appup_plugin, [
         {description, "A rebar3 plugin for handling .appup files"},
-        {vsn, "1.2.0"},
+        {vsn, "1.2.1"},
         {registered, []},
         {applications,
             [
