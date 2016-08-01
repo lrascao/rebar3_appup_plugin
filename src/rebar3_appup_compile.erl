@@ -63,11 +63,13 @@ compile(Source, Target, _Config) ->
                 {error, Reason} ->
                     rebar_api:abort("Failed writing to target file ~s due to ~s",
                            [Target, Reason]);
-                ok -> ok
+                ok ->
+                    rebar_api:info("Compiling ~p", [Source]),
+                    ok
             end;
         {error, enoent} ->
-            rebar_api:info("Missing file: ~p, skipping~n", [Source]);
-	{error, Reason} ->
+            rebar_api:debug("Missing file: ~p, skipping~n", [Source]);
+	    {error, Reason} ->
             rebar_api:abort("Failed to compile ~s: ~p~n", [Source, Reason]);
         _ ->
             rebar_api:abort("Failed to compile ~s, not an appup~n", [Source])
