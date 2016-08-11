@@ -24,7 +24,7 @@ ifeq ($(REBAR3),)
 $(error "Rebar3 not available on this system")
 endif
 
-.PHONY: all compile clean dialyze test
+.PHONY: all compile clean dialyzer test
 
 travis: test
 all: deps compile
@@ -46,8 +46,8 @@ test: compile
 	rm -rf _build/test
 	$(REBAR3) ct
 
-dialyze:
-	- $(REBAR3) dialyze
+dialyzer:
+	- $(REBAR3) dialyzer
 
 distclean: clean
 	- rm -rf .rebar3

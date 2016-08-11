@@ -41,7 +41,9 @@ groups() ->
          remove_dependency_appup,
          restore_dependency_appup,
          new_auto_gen_server_appup,
-         add_fields_auto_gen_server_state_appup]
+         add_fields_auto_gen_server_state_appup,
+         new_simple_module,
+         simple_module_use]
      }].
 
 init_per_suite(Config) ->
@@ -254,6 +256,54 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                            Config),
     ok.
 
+new_simple_module(doc) -> ["Generate an appup for an upgrade "
+                           "that involves loading a new module"];
+new_simple_module(suite) -> [];
+new_simple_module(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir) ->
+                            {ok, "ok"} = sh("./bin/relapp eval "
+                                            "\"relapp_m1:test().\"",
+                                            [], DeployDir)
+                      end,
+    AfterDowngradeFun = fun(DeployDir) ->
+                            {ok, Ret} = sh("./bin/relapp eval "
+                                             "\"erlang:module_loaded(relapp_m1).\"",
+                                             [], DeployDir),
+                            true = (Ret =:= "false")
+                        end,
+    ok = upgrade_downgrade("relapp1", "1.0.12", "1.0.13",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {[{add_module, relapp_m1}],
+                            [{delete_module,relapp_m1}]},
+                           Config),
+    ok.
+
+simple_module_use(doc) -> ["Generate an appup for an upgrade "
+                           "an updated module and a gen server that "
+                           "will make use of that module"];
+simple_module_use(suite) -> [];
+simple_module_use(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir) ->
+                            {ok, "{ok,arg}"} = sh("./bin/relapp eval "
+                                            "\"relapp_m1:test(arg).\"",
+                                            [], DeployDir)
+                      end,
+    AfterDowngradeFun = fun(DeployDir) ->
+                            {ok, "ok"} = sh("./bin/relapp eval "
+                                             "\"relapp_m1:test().\"",
+                                             [], DeployDir)
+                        end,
+    ok = upgrade_downgrade("relapp1", "1.0.13", "1.0.14",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {[{load_module, relapp_m1, []},
+                             {update, relapp_srv, {advanced,[]}, [relapp_m1]}],
+                            [{update, relapp_srv, {advanced,[]}, [relapp_m1]},
+                             {load_module, relapp_m1, []}]},
+                           Config),
+    ok.
+
 %% -------------------------------------------------------------
 %% Private methods
 %% -------------------------------------------------------------
@@ -281,7 +331,6 @@ upgrade_downgrade(App, FromVersion, ToVersion,
     ExpectedAppup = check_appup(RelAppDir, "relapp", FromVersion, ToVersion),
     %% now generate the relup
     {ok, _} = rebar3_command(RelAppDir, "relup"),
-    log("rel app dir: ~p", [RelAppDir]),
     {ok, _} = rebar3_command(RelAppDir, "tar"),
     %% and now actually perform it on a running release
     ok = release_upgrade_downgrade(RelAppDir, "relapp",

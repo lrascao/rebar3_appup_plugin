@@ -79,8 +79,6 @@ do(State) ->
     rebar_api:debug("previous release, name: ~p, version: ~p",
         [PreviousName, PreviousVer]),
 
-    ModDeps = [],
-
     %% Run some simple checks
     true = rebar3_appup_utils:prop_check(CurrentVer =/= PreviousVer,
                       "current (~p) and previous (~p) .rel versions match",
@@ -110,7 +108,7 @@ do(State) ->
     lists:foreach(fun(App) ->
                     generate_appup_files(TargetDir,
                                          CurrentRelPath, PreviousRelPath,
-                                         ModDeps, App,
+                                         App,
                                          State)
                   end, UpgradeApps),
     {ok, State}.
@@ -181,10 +179,10 @@ gen_appup_which_apps(UpgradedApps, [First|Rest]) ->
 gen_appup_which_apps(Apps, []) ->
     Apps.
 
-generate_appup_files(_, _, _, _, {upgrade, _App, {undefined, _}}, _) -> ok;
+generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _) -> ok;
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
-                     ModDeps, {upgrade, App, {OldVer, NewVer}},
+                     {upgrade, App, {OldVer, NewVer}},
                      State) ->
     OldRelEbinDir = filename:join([OldVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ OldVer, "ebin"]),
@@ -194,13 +192,13 @@ generate_appup_files(TargetDir,
     {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
                                                                  OldRelEbinDir),
 
-    ChangedNames = [list_to_atom(file_to_name(F)) || {F, _} <- ChangedFiles],
-    ModDeps1 = [{N, [M1 || M1 <- M, lists:member(M1, ChangedNames)]}
-                || {N, M} <- ModDeps],
+    %% generate a module dependency tree
+    ModDeps = module_dependencies(AddedFiles ++ DeletedFiles ++ ChangedFiles),
+    rebar_api:debug("deps: ~p", [ModDeps]),
 
     Added = [generate_instruction(add_module, File) || File <- AddedFiles],
     Deleted = [generate_instruction(delete_module, File) || File <- DeletedFiles],
-    Changed = [generate_instruction(upgrade, ModDeps1, File) || File <- ChangedFiles],
+    Changed = [generate_instruction(upgrade, ModDeps, File) || File <- ChangedFiles],
 
     UpgradeInstructions = lists:append([Added, Deleted, Changed]),
     DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
@@ -210,6 +208,36 @@ generate_appup_files(TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
                      State),
     ok.
+
+module_dependencies(Files) ->
+    %% build a unique list of directories holding the supplied files
+    Dirs0 = lists:map(fun({File, _}) ->
+                            filename:dirname(File);
+                         (File) ->
+                            filename:dirname(File)
+                      end, Files),
+    Dirs = lists:usort(Dirs0),
+    %% start off xref
+    {ok, _} = xref:start(xref),
+    %% add each of the directories to the xref path
+    lists:foreach(fun(Dir) ->
+                    {ok, _} = xref:add_directory(xref, Dir)
+                  end, Dirs),
+    Mods = [list_to_atom(file_to_name(F)) || {F, _} <- Files],
+    module_dependencies(Mods, Mods, []).
+
+module_dependencies([], _Mods, Acc) ->
+    xref:stop(xref),
+    Acc;
+module_dependencies([Mod | Rest], Mods, Acc) ->
+    {ok, Deps0} = xref:analyze(xref, {module_call, Mod}),
+    %% remove self
+    Deps1 = Deps0 -- [Mod],
+    %% intersect with modules being changed
+    Set0 = sets:from_list(Deps1),
+    Set1 = sets:from_list(Mods),
+    Deps = sets:to_list(sets:intersection(Set0, Set1)),
+    module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
 
 write_appup(App, OldVer, NewVer, TargetDir,
             UpgradeInstructions, DowngradeInstructions, State) ->
