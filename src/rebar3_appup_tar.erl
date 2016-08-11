@@ -61,14 +61,18 @@ do(State) ->
     AppupFile = filename:join([LibDir, Name, "ebin", Name ++ ".appup"]),
     case file:consult(AppupFile) of
         {ok, Appup} ->
-            {value, {Version, Upgrade, _Downgrade}} = lists:keysearch(Version,
-                                                                      1, Appup),
-            Opts = [{app, Name},
-                    {version, Version},
-                    {rel_dir, RelDir},
-                    {lib_dir, LibDir},
-                    {plugin_dir, PluginDir}],
-            handle_upgrade(Upgrade, Opts);
+            case lists:keysearch(Version, 1, Appup) of
+              {value, {Version, Upgrade, _Downgrade}} ->
+                Opts = [{app, Name},
+                        {version, Version},
+                        {rel_dir, RelDir},
+                        {lib_dir, LibDir},
+                        {plugin_dir, PluginDir}],
+                handle_upgrade(Upgrade, Opts);
+              false ->
+                rebar_api:abort("unable to find version ~p in appup ~p",
+                  [Version, Appup])
+            end;
         _ -> ok
     end,
     {ok, State}.
@@ -97,11 +101,9 @@ handle_upgrade([{UpFromVersion, Instructions} | Rest], Opts) ->
 
 handle_upgrade_instruction(_, [], _) -> ok;
 handle_upgrade_instruction(UpFromVersion,
-                           [{update, Module, _Change, _DepMods} | Rest],
+                           [{update, Module, _Change, _PrePurge, _PostPurge, _DepMods} | Rest],
                            Opts) ->
     Version = proplists:get_value(version, Opts),
-    rebar_api:debug("gen_server ~p upgrade from ~p to ~p\n",
-        [Module, UpFromVersion, Version]),
     App = proplists:get_value(app, Opts),
     RelDir = proplists:get_value(rel_dir, Opts),
 
@@ -114,7 +116,9 @@ handle_upgrade_instruction(UpFromVersion,
 
     case proplists:get_value(state_record_name, ToData, undefined) of
         undefined -> ok;
-        _ ->
+        StateRecordName ->
+            rebar_api:debug("gen_server ~p state record ~p upgrade from ~p to ~p\n",
+                [Module, StateRecordName, UpFromVersion, Version]),
             do_state_record_migration(Module,
                                       UpFromVersion, FromData,
                                       Version, ToData, Opts)

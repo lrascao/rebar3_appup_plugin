@@ -42,8 +42,8 @@ groups() ->
          restore_dependency_appup,
          new_auto_gen_server_appup,
          add_fields_auto_gen_server_state_appup,
-         new_simple_module,
-         simple_module_use]
+         new_simple_module, simple_module_use,
+         brutal_purge_test, soft_purge_test]
      }].
 
 init_per_suite(Config) ->
@@ -91,6 +91,7 @@ init_per_testcase(_Func, Config) ->
 
 end_per_testcase(_Func, Config) ->
     DataDir = lookup_config(data_dir, Config),
+    PrivDir = lookup_config(priv_dir, Config),
     SuiteConfig = ct:get_config(config),
     Apps = proplists:get_value(apps, SuiteConfig),
     lists:foreach(fun({App, _}) ->
@@ -98,6 +99,7 @@ end_per_testcase(_Func, Config) ->
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
                     {ok, _} = sh("rm -rf _build/default/lib/relapp/ebin/relapp.appup", [], Dir)
                   end, Apps),
+    {ok, _} = sh("rm -rf " ++ PrivDir, [], DataDir),
     global:unregister_name(rebar3_appup_plugin_global_logger),
     Config.
 
@@ -126,7 +128,7 @@ new_gen_server_appup(doc) -> ["Generate an appup for a gen_server upgrade"];
 new_gen_server_appup(suite) -> [];
 new_gen_server_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.2", "1.0.3",
-                           {[{add_module, relapp_srv},
+                           {[{add_module, relapp_srv, []},
                              {update, relapp_sup, supervisor}],
                             [{update,relapp_sup,supervisor},
                              {delete_module,relapp_srv}]},
@@ -138,8 +140,8 @@ new_gen_server_state_appup(doc) -> ["Generate an appup for a gen_server upgrade 
 new_gen_server_state_appup(suite) -> [];
 new_gen_server_state_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.3", "1.0.4",
-                           {[{update, relapp_srv, {advanced,[]},[]}],
-                            [{update, relapp_srv, {advanced,[]},[]}]},
+                           {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
+                            [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
     ok.
 
@@ -148,8 +150,8 @@ add_fields_gen_server_state_appup(doc) -> ["Generate an appup for a gen_server u
 add_fields_gen_server_state_appup(suite) -> [];
 add_fields_gen_server_state_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.4", "1.0.5",
-                           {[{update, relapp_srv, {advanced,[]},[]}],
-                            [{update, relapp_srv, {advanced,[]},[]}]},
+                           {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
+                            [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
     ok.
 
@@ -158,8 +160,8 @@ add_field_middle_gen_server_state_appup(doc) -> ["Generate an appup for a gen_se
 add_field_middle_gen_server_state_appup(suite) -> [];
 add_field_middle_gen_server_state_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.5", "1.0.6",
-                           {[{update, relapp_srv, {advanced,[]},[]}],
-                            [{update, relapp_srv, {advanced,[]},[]}]},
+                           {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
+                            [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
     ok.
 
@@ -169,8 +171,8 @@ replace_field_middle_gen_server_state_appup(doc) -> ["Generate an appup for a ge
 replace_field_middle_gen_server_state_appup(suite) -> [];
 replace_field_middle_gen_server_state_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.6", "1.0.7",
-                           {[{update, relapp_srv, {advanced,[]},[]}],
-                            [{update, relapp_srv, {advanced,[]},[]}]},
+                           {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
+                            [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
     ok.
 
@@ -207,7 +209,7 @@ new_auto_gen_server_appup(doc) -> ["Generate an appup for a gen_server upgrade "
 new_auto_gen_server_appup(suite) -> [];
 new_auto_gen_server_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.10", "1.0.11",
-                           {[{add_module, relapp_srv2},
+                           {[{add_module, relapp_srv2, []},
                              {update, relapp_sup, supervisor}],
                             [{update,relapp_sup,supervisor},
                              {delete_module,relapp_srv2}]},
@@ -220,63 +222,68 @@ add_fields_auto_gen_server_state_appup(doc) ->
      "migrating the state of the old record to the new one"];
 add_fields_auto_gen_server_state_appup(suite) -> [];
 add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
-    BeforeUpgradeFun = fun(DeployDir) ->
-                            {ok, State0} = sh("./bin/relapp eval "
+    BeforeUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Srv2State0} = sh("./bin/relapp eval "
                                               "\"sys:get_state(relapp_srv2).\"",
                                               [], DeployDir),
-                            true = (State0 =:= "{state,0}"),
+                            true = (Srv2State0 =:= "{state,0}"),
                             sh("./bin/relapp eval "
                                "\"relapp_srv2:set_state({state, 42}).\"",
                                [], DeployDir),
-                            {ok, State1} = sh("./bin/relapp eval "
+                            {ok, Srv2State1} = sh("./bin/relapp eval "
                                               "\"sys:get_state(relapp_srv2).\"",
                                               [], DeployDir),
-                            true = (State1 =:= "{state,42}")
+                            true = (Srv2State1 =:= "{state,42}"),
+                            State
                        end,
-    AfterUpgradeFun = fun(DeployDir) ->
-                            {ok, State} = sh("./bin/relapp eval "
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Srv2State} = sh("./bin/relapp eval "
                                              "\"sys:get_state(relapp_srv2).\"",
                                              [], DeployDir),
-                            log("state: ~p\n", [State]),
-                            true = (State =:= "{state,42,<<>>,<<>>}")
+                            log("state: ~p\n", [Srv2State]),
+                            true = (Srv2State =:= "{state,42,<<>>,<<>>}"),
+                            State
                       end,
-    AfterDowngradeFun = fun(DeployDir) ->
-                            {ok, State} = sh("./bin/relapp eval "
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, Srv2State} = sh("./bin/relapp eval "
                                              "\"sys:get_state(relapp_srv2).\"",
                                              [], DeployDir),
-                            log("state: ~p\n", [State]),
-                            true = (State =:= "{state,42}")
+                            log("state: ~p\n", [Srv2State]),
+                            true = (Srv2State =:= "{state,42}"),
+                            State
                         end,
     ok = upgrade_downgrade("relapp1", "1.0.11", "1.0.12",
                            [{before_upgrade, BeforeUpgradeFun},
                             {after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
-                           {[{update, relapp_srv2, {advanced,[]},[]}],
-                            [{update, relapp_srv2, {advanced,[]},[]}]},
-                           Config),
+                           {[{update, relapp_srv2, {advanced,[]}, brutal_purge, brutal_purge, []}],
+                            [{update, relapp_srv2, {advanced,[]}, brutal_purge, brutal_purge, []}]},
+                           [], Config),
     ok.
 
 new_simple_module(doc) -> ["Generate an appup for an upgrade "
                            "that involves loading a new module"];
 new_simple_module(suite) -> [];
 new_simple_module(Config) when is_list(Config) ->
-    AfterUpgradeFun = fun(DeployDir) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, "ok"} = sh("./bin/relapp eval "
                                             "\"relapp_m1:test().\"",
-                                            [], DeployDir)
+                                            [], DeployDir),
+                            State
                       end,
-    AfterDowngradeFun = fun(DeployDir) ->
+    AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, Ret} = sh("./bin/relapp eval "
                                              "\"erlang:module_loaded(relapp_m1).\"",
                                              [], DeployDir),
-                            true = (Ret =:= "false")
+                            true = (Ret =:= "false"),
+                            State
                         end,
     ok = upgrade_downgrade("relapp1", "1.0.12", "1.0.13",
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
-                           {[{add_module, relapp_m1}],
+                           {[{add_module, relapp_m1, []}],
                             [{delete_module,relapp_m1}]},
-                           Config),
+                           [], Config),
     ok.
 
 simple_module_use(doc) -> ["Generate an appup for an upgrade "
@@ -284,23 +291,109 @@ simple_module_use(doc) -> ["Generate an appup for an upgrade "
                            "will make use of that module"];
 simple_module_use(suite) -> [];
 simple_module_use(Config) when is_list(Config) ->
-    AfterUpgradeFun = fun(DeployDir) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, "{ok,arg}"} = sh("./bin/relapp eval "
                                             "\"relapp_m1:test(arg).\"",
-                                            [], DeployDir)
+                                            [], DeployDir),
+                            State
                       end,
-    AfterDowngradeFun = fun(DeployDir) ->
+    AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, "ok"} = sh("./bin/relapp eval "
                                              "\"relapp_m1:test().\"",
-                                             [], DeployDir)
+                                             [], DeployDir),
+                            State
                         end,
     ok = upgrade_downgrade("relapp1", "1.0.13", "1.0.14",
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
-                           {[{load_module, relapp_m1, []},
-                             {update, relapp_srv, {advanced,[]}, [relapp_m1]}],
-                            [{update, relapp_srv, {advanced,[]}, [relapp_m1]},
-                             {load_module, relapp_m1, []}]},
+                           {[{load_module, relapp_m1, brutal_purge, brutal_purge, []},
+                             {update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, [relapp_m1]}],
+                            [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, [relapp_m1]},
+                             {load_module, relapp_m1, brutal_purge, brutal_purge, []}]},
+                           [], Config),
+    ok.
+
+brutal_purge_test(doc) -> ["Generate an appup for an upgrade "
+                           "that involves loading a module that had sent "
+                           "one of it's methods to a gen_server's state"];
+brutal_purge_test(suite) -> [];
+brutal_purge_test(Config) when is_list(Config) ->
+    BeforeUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "ok"} = sh("./bin/relapp eval "
+                                            "\"relapp_m1:store_fun().\"",
+                                            [], DeployDir),
+                            State
+                      end,
+    CheckUpgradeFun = fun(DeployDir, State) ->
+                        %% the upgrade will succeed, however will be killed due to it
+                        {ok, _} = proplists:get_value(upgrade_result, State),
+                        %% since this is a brutal purge, the gen server will get killed
+                        %% and cause the application to stop due to reached maximum supervisor
+                        %% intensity
+                        %% wait a bit
+                        timer:sleep(4000),
+                        %% then ensure it actually died
+                        true = ({ok, "pong"} =/= sh("./bin/relapp ping ", [], DeployDir)),
+                        %% restart it
+                        {ok, _} = sh("./bin/relapp start ", [], DeployDir),
+                        %% wait for it to start
+                        ok = wait_for_node_start(DeployDir),
+                        State
+                      end,
+    ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
+                           [{before_upgrade, BeforeUpgradeFun},
+                            {check_upgrade, CheckUpgradeFun}],
+                           {[{load_module, relapp_m1, brutal_purge, brutal_purge, []}],
+                            [{load_module, relapp_m1, brutal_purge, brutal_purge, []}]},
+                           [{generate_opts, "--purge \"relapp_m1=brutal\""}],
+                           Config),
+    ok.
+
+soft_purge_test(doc) -> ["Generate an appup for an upgrade "
+                         "that involves loading a module that had sent "
+                         "one of it's methods to a gen_server's state"];
+soft_purge_test(suite) -> [];
+soft_purge_test(Config) when is_list(Config) ->
+    BeforeUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "ok"} = sh("./bin/relapp eval "
+                                            "\"relapp_m1:store_fun().\"",
+                                            [], DeployDir),
+                            {ok, Srv2Pid} = sh("./bin/relapp eval "
+                                               "\"whereis(relapp_srv2).\"",
+                                            [], DeployDir),
+                            State ++ [{srv2_pid, Srv2Pid}]
+                      end,
+    CheckUpgradeFun = fun(_DeployDir, State) ->
+                        {ok, _} = proplists:get_value(upgrade_result, State),
+                        State
+                      end,
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, NewSrv2Pid} = sh("./bin/relapp eval "
+                                                  "\"whereis(relapp_srv2).\"",
+                                                  [], DeployDir),
+                            true = (NewSrv2Pid =:= proplists:get_value(srv2_pid, State)),
+                            {ok, "ok"} =
+                                  sh("./bin/relapp eval "
+                                     "\"relapp_srv2:call_stored_fun().\"",
+                                     [], DeployDir),
+                            State
+                      end,
+    CheckDowngradeFun = fun(_DeployDir, State) ->
+                        DowngradeResult = proplists:get_value(downgrade_result, State),
+                        %% since this is a soft purge we expect an error from the release
+                        %% handler
+                        % escript: exception error: no case clause matching {error,{old_processes,relapp_m1}}
+                        true = ({error,127} =:= DowngradeResult),
+                        State
+                      end,
+    ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
+                           [{before_upgrade, BeforeUpgradeFun},
+                            {check_upgrade, CheckUpgradeFun},
+                            {after_upgrade, AfterUpgradeFun},
+                            {check_downgrade, CheckDowngradeFun}],
+                           {[{load_module, relapp_m1, soft_purge, soft_purge, []}],
+                            [{load_module, relapp_m1, soft_purge, soft_purge, []}]},
+                           [{generate_opts, "--purge \"relapp_m1=soft\""}],
                            Config),
     ok.
 
@@ -312,11 +405,13 @@ upgrade_downgrade(App, FromVersion, ToVersion,
                   ExpectedAppup, Config) ->
     upgrade_downgrade(App, FromVersion, ToVersion,
                       [],
-                      ExpectedAppup, Config).
+                      ExpectedAppup,
+                      [], Config).
 
 upgrade_downgrade(App, FromVersion, ToVersion,
                   Hooks,
-                  ExpectedAppup, Config) ->
+                  ExpectedAppup,
+                  Opts, Config) ->
     DataDir = lookup_config(data_dir, Config),
     RelAppDir = filename:join(DataDir, App),
     %% check out the from version
@@ -326,7 +421,8 @@ upgrade_downgrade(App, FromVersion, ToVersion,
     {ok, _} = git_checkout(RelAppDir, ToVersion),
     {ok, _} = rebar3_command(RelAppDir, "release"),
     %% now generate the appup
-    {ok, _} = rebar3_command(RelAppDir, "appup generate"),
+    GenerateOpts = proplists:get_value(generate_opts, Opts, ""),
+    {ok, _} = rebar3_command(RelAppDir, "appup generate " ++  GenerateOpts),
     %% ensure that we have an expected appup file
     ExpectedAppup = check_appup(RelAppDir, "relapp", FromVersion, ToVersion),
     %% now generate the relup
@@ -370,35 +466,51 @@ release_upgrade_downgrade(RelDir, AppName,
                           AppName ++ ".tar.gz"]),
     {ok, _} = file:copy(Src1, Dst1),
     log("copied to version ~p to ~p\n", [Src1, Dst1]),
-    maybe_run_hook(proplists:get_value(before_upgrade, Hooks),
-                   DeployDir),
+    State0 = maybe_run_hook(proplists:get_value(before_upgrade, Hooks),
+                            DeployDir, []),
     %% and upgrade it
-    {ok, _} = sh("./bin/relapp upgrade " ++ ToVersion, [], DeployDir),
+    UpgradeResult = sh("./bin/relapp upgrade " ++ ToVersion, [], DeployDir),
+    State1 = maybe_run_hook(proplists:get_value(check_upgrade, Hooks,
+                                                fun default_check_upgrade/2),
+                            DeployDir, State0 ++ [{upgrade_result, UpgradeResult}]),
     %% ensure that the upgrade really went through
     {ok, ToVersion} = get_running_version(DeployDir),
-    maybe_run_hook(proplists:get_value(after_upgrade, Hooks),
-                   DeployDir),
+    State2 = maybe_run_hook(proplists:get_value(after_upgrade, Hooks),
+                            DeployDir, State1),
     %% now downgrade it
     Dst2 = filename:join([DeployDir,
                           "releases", FromVersion,
                           AppName ++ ".tar.gz"]),
     {ok, _} = file:copy(Src0, Dst2),
-    maybe_run_hook(proplists:get_value(before_downgrade, Hooks),
-                   DeployDir),
-    {ok, _} = sh("./bin/relapp downgrade " ++ FromVersion, [], DeployDir),
+    State3 = maybe_run_hook(proplists:get_value(before_downgrade, Hooks),
+                            DeployDir, State2),
+    DowngradeResult = sh("./bin/relapp downgrade " ++ FromVersion, [], DeployDir),
+    State4 = maybe_run_hook(proplists:get_value(check_downgrade, Hooks,
+                                                fun default_check_downgrade/2),
+                            DeployDir, State3 ++ [{downgrade_result, DowngradeResult}]),
     %% ensure that the downgrade really went through
     {ok, FromVersion} = get_running_version(DeployDir),
     maybe_run_hook(proplists:get_value(after_downgrade, Hooks),
-                   DeployDir),
+                   DeployDir, State4),
     %% stop the app
     {ok, _} = sh("./bin/relapp stop ", [], DeployDir),
     %% wait for it to stop
     ok = wait_for_node_stop(DeployDir),
     ok.
 
-maybe_run_hook(undefined, _DeployDir) -> ok;
-maybe_run_hook(Hook, DeployDir) ->
-    Hook(DeployDir).
+default_check_upgrade(_DeployDir, State) ->
+    UpgradeResult = proplists:get_value(upgrade_result, State),
+    {ok, _} = UpgradeResult,
+    State.
+
+default_check_downgrade(_DeployDir, State) ->
+    DowngradeResult = proplists:get_value(downgrade_result, State),
+    {ok, _} = DowngradeResult,
+    State.
+
+maybe_run_hook(undefined, _DeployDir, State) -> State;
+maybe_run_hook(Hook, DeployDir, State) ->
+    Hook(DeployDir, State).
 
 wait_for_node_start(DeployDir) ->
     case sh("./bin/relapp ping ", [], DeployDir) of
