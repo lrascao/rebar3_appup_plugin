@@ -1,5 +1,5 @@
 %% downgrade to Vsn, current state is passed
-'$convert_state_record$'({down, _Vsn}, OldState, Extra0) ->
+'$convert_state_record$'({down, _Vsn} = OldVsn, OldState, Extra0) ->
     %% the current version will become the old after the downgrade
     VsnData = {{vsn_data}},
     %% get the old/new vsn data
@@ -25,7 +25,7 @@
                         end
                     end, Out0, NewRecordFields),
     Extra = Extra0 ++ [{old_state, OldState}],
-    {NewState, Extra};
+    {OldVsn, NewState, Extra};
 %% upgrade from OldVsn, old state is passed
 '$convert_state_record$'(OldVsn, OldState, Extra0) ->
     VsnData = {{vsn_data}},
@@ -51,4 +51,4 @@
                         end
                     end, Out0, NewRecordFields),
     Extra = Extra0 ++ [{old_state, OldState}],
-    {NewState, Extra}.
+    {OldVsn, NewState, Extra}.

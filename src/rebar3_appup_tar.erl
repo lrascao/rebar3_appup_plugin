@@ -264,8 +264,9 @@ do_state_record_migration(Module,
     OldStateRecordAbst = proplists:get_value(state_record_abstract_code, FromData),
     OldStateRecordName = apply_version_record_name(StateRecordName,
                                                    FromVersion),
+    %% inject the old record version in the new beam code
     Forms1 = inject_record(OldStateRecordName, OldStateRecordAbst, Forms0),
-
+    %% inject the method that performs the record conversion
     Forms2 = inject_method(ConvertForm, Forms1),
     %% inject an invocation at the top of the code_change method
     %% so that the record is converted
@@ -332,15 +333,18 @@ inject_code_change_convert_call(Forms, Opts) ->
               end, Forms).
 
 inject_code_change_clause({clause, L, Args0, [], Body0}, Opts) ->
-    %% modify the args, rename the second argument which is the state to state0
+    %% modify the args, rename the second argument which is the state to be migrated
     %% and the third one which is the extra options
-    [Arg1, {var, L0, StateVar}, {var, L1, ExtraVar}] = Args0,
-    Args = [Arg1, {var, L0, 'State0'}, {var, L1, 'Extra0'}],
+    [{var, L0, OldVsnVar}, {var, L1, StateVar}, {var, L2, ExtraVar}] = Args0,
+    Args = [{var, L0, '__OldVsn__'},
+            {var, L1, '__State0__'},
+            {var, L2, '__Extra0__'}],
     %% now inject the beginning of the body with a call to our convert method
     {ok, ConvertCallTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
                                                               ?PRIV_DIR,
                                                               ?CONVERT_CALL_TEMPLATE])),
-    ConvertCallCtx = dict:from_list([{state_var, atom_to_list(StateVar)},
+    ConvertCallCtx = dict:from_list([{old_vsn_var, atom_to_list(OldVsnVar)},
+                                     {state_var, atom_to_list(StateVar)},
                                      {extra_var, atom_to_list(ExtraVar)}]),
     ConvertCall = mustache:render(binary_to_list(ConvertCallTemplate),
                                   ConvertCallCtx),
