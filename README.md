@@ -63,3 +63,9 @@ Clean
 ---
 
     rebar3 appup clean
+
+## Copyright and License
+
+Copyright (c) 2016 Luis Rascão
+
+**rebar3_appup_plugin** source code is licensed under the [Apache 2.0](LICENSE.md).
