@@ -53,11 +53,18 @@ do(State) ->
                 [AppInfo]
            end,
     lists:foreach(fun(AppInfo) ->
-        Opts = rebar_app_info:opts(AppInfo),
-        SrcDir = appup_file_src(AppInfo),
-	TargetDir = appup_file_target(AppInfo),
-	compile(SrcDir, TargetDir, Opts)
-    end, Apps),
+                    Opts = rebar_app_info:opts(AppInfo),
+                    Source = appup_file_src(AppInfo),
+                    case filelib:is_file(Source) of
+                        true ->
+                            rebar_api:info("Compiling ~s",
+                                [filename:basename(Source)]),
+                            Target = appup_file_target(AppInfo),
+                            {ok, AppupTerm} = evaluate(Source),
+                            compile(AppupTerm, Target, Opts);
+                        false -> ok
+                    end
+                  end, Apps),
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().
@@ -67,31 +74,37 @@ format_error(Reason) ->
 %% ===================================================================
 %% Private API
 %% ===================================================================
-compile(Source, Target, _Config) ->
+-type bs_vars() :: [{term(), term()}].
+-spec bs(bs_vars()) -> bs_vars().
+bs(Vars) ->
+    lists:foldl(fun({K,V}, Bs) ->
+                        erl_eval:add_binding(K, V, Bs)
+                end, erl_eval:new_bindings(), Vars).
+
+evaluate(Source) ->
+    file:script(Source, bs([])).
+
+compile(AppupTerm, Target, _Opts) ->
     %% Perform basic validation on the appup file
     %% i.e. if a consult succeeds and basic appup
     %% structure exists.
-    case file:consult(Source) of
+    case AppupTerm of
         %% The .appup syntax is described in
         %% http://erlang.org/doc/man/appup.html.
-        {ok, [{_Vsn, UpFromVsn, DownToVsn} = AppUp]}
+        {_Vsn, UpFromVsn, DownToVsn}
           when is_list(UpFromVsn), is_list(DownToVsn) ->
             case file:write_file(
                    Target,
-                   lists:flatten(io_lib:format("~p.", [AppUp]))) of
+                   lists:flatten(io_lib:format("~p.", [AppupTerm]))) of
                 {error, Reason} ->
                     rebar_api:abort("Failed writing to target file ~s due to ~s",
                            [Target, Reason]);
                 ok ->
-                    rebar_api:info("Compiling ~p", [Source]),
                     ok
             end;
-        {error, enoent} ->
-            rebar_api:debug("Missing file: ~p, skipping~n", [Source]);
-	    {error, Reason} ->
-            rebar_api:abort("Failed to compile ~s: ~p~n", [Source, Reason]);
         _ ->
-            rebar_api:abort("Failed to compile ~s, not an appup~n", [Source])
+            rebar_api:abort("Failed to compile not an appup:\n~p~n",
+                [AppupTerm])
     end.
 
 appup_file_src(AppInfo) ->

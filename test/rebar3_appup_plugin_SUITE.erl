@@ -43,7 +43,8 @@ groups() ->
          new_auto_gen_server_appup,
          add_fields_auto_gen_server_state_appup,
          new_simple_module, simple_module_use,
-         brutal_purge_test, soft_purge_test]
+         brutal_purge_test, soft_purge_test,
+         appup_src_scripting]
      }].
 
 init_per_suite(Config) ->
@@ -397,6 +398,20 @@ soft_purge_test(Config) when is_list(Config) ->
                            Config),
     ok.
 
+appup_src_scripting(doc) -> ["Test .appup.src scripting supports"];
+appup_src_scripting(suite) -> [];
+appup_src_scripting(Config) when is_list(Config) ->
+    ok = upgrade_downgrade("relapp1", "1.0.16", "1.0.17",
+                           [],
+                           {[{load_module,relapp_m1,brutal_purge,brutal_purge, [relapp_srv2]},
+                             {update,relapp_srv, {advanced,[]}, brutal_purge,brutal_purge, [relapp_m1]},
+                             {update,relapp_srv2, {advanced,[]}, brutal_purge,brutal_purge,[]}],
+                            [{update,relapp_srv2, {advanced,[]}, brutal_purge,brutal_purge,[]},
+                             {update,relapp_srv, {advanced,[]}, brutal_purge,brutal_purge, [relapp_m1]},
+                             {load_module,relapp_m1,brutal_purge,brutal_purge, [relapp_srv2]}]},
+                           [{generate_appup, false}], Config),
+    ok.
+
 %% -------------------------------------------------------------
 %% Private methods
 %% -------------------------------------------------------------
@@ -421,8 +436,12 @@ upgrade_downgrade(App, FromVersion, ToVersion,
     {ok, _} = git_checkout(RelAppDir, ToVersion),
     {ok, _} = rebar3_command(RelAppDir, "release"),
     %% now generate the appup
-    GenerateOpts = proplists:get_value(generate_opts, Opts, ""),
-    {ok, _} = rebar3_command(RelAppDir, "appup generate " ++  GenerateOpts),
+    case proplists:get_value(generate_appup, Opts, true) of
+      true ->
+        GenerateOpts = proplists:get_value(generate_opts, Opts, ""),
+        {ok, _} = rebar3_command(RelAppDir, "appup generate " ++  GenerateOpts);
+      false -> ok
+    end,
     %% ensure that we have an expected appup file
     ExpectedAppup = check_appup(RelAppDir, "relapp", FromVersion, ToVersion),
     %% now generate the relup
