@@ -28,8 +28,8 @@
 
 -define(DEFAULT_RELEASE_DIR, "rel").
 -define(PRIV_DIR, "priv").
--define(CONVERT_TEMPLATE, "convert").
--define(CONVERT_CALL_TEMPLATE, "convert_call").
+-define(CONVERT_TEMPLATE, "templates/convert.tpl").
+-define(CONVERT_CALL_TEMPLATE, "templates/convert_call.tpl").
 
 %% ===================================================================
 %% Public API
@@ -73,7 +73,7 @@ do(State) ->
     %% search for this plugin's appinfo in order to know
     %% where to look for the mustache templates
     Apps = rebar_state:all_plugin_deps(State),
-    PluginInfo = appup_plugin_appinfo(Apps, undefined),
+    PluginInfo = rebar3_appup_utils:appup_plugin_appinfo(Apps),
     PluginDir = rebar_app_info:dir(PluginInfo),
 
     %% first consult the appup to look for gen_servers that need to be upgraded
@@ -103,15 +103,6 @@ format_error(Reason) ->
 %% ===================================================================
 %% Private API
 %% ===================================================================
-
-appup_plugin_appinfo([], AppInfo) -> AppInfo;
-appup_plugin_appinfo([AppInfo | Rest], _) ->
-    case rebar_app_info:name(AppInfo) of
-        <<"rebar3_appup_plugin">> ->
-            appup_plugin_appinfo([], AppInfo);
-        _ ->
-            appup_plugin_appinfo(Rest, undefined)
-    end.
 
 handle_upgrade([], _Opts) -> ok;
 handle_upgrade([{UpFromVersion, Instructions} | Rest], Opts) ->

@@ -26,6 +26,8 @@
 -define(PROVIDER, generate).
 -define(DEPS, []).
 
+-define(PRIV_DIR, "priv").
+-define(APPUP_TEMPLATE, "templates/appup.tpl").
 -define(APPUPFILEFORMAT, "%% appup generated for ~p by rebar3_appup_plugin (~p)~n"
         "{~p,\n\t[{~p, \n\t\t~p}], \n\t[{~p, \n\t\t~p}\n]}.~n").
 -define(DEFAULT_RELEASE_DIR, "rel").
@@ -64,6 +66,12 @@ init(State) ->
 do(State) ->
     {Opts, _} = rebar_state:command_parsed_args(State),
     rebar_api:debug("opts: ~p~n", [Opts]),
+
+    %% search for this plugin's appinfo in order to know
+    %% where to look for the mustache templates
+    Apps = rebar_state:all_plugin_deps(State),
+    PluginInfo = rebar3_appup_utils:appup_plugin_appinfo(Apps),
+    PluginDir = rebar_app_info:dir(PluginInfo),
 
     RelxConfig = rebar_state:get(State, relx, []),
     {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
@@ -133,7 +141,8 @@ do(State) ->
     PurgeOpts0 = proplists:get_value(purge, Opts, []),
     PurgeOpts = parse_purge_opts(PurgeOpts0),
 
-    AppupOpts = [{purge_opts, PurgeOpts}],
+    AppupOpts = [{purge_opts, PurgeOpts},
+                 {plugin_dir, PluginDir}],
     rebar_api:debug("appup opts: ~p", [AppupOpts]),
 
     %% Generate appup files for apps
@@ -272,7 +281,7 @@ generate_appup_files(TargetDir,
 
     ok = write_appup(App, OldVer, NewVer, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
-                     State),
+                     Opts, State),
     ok.
 
 module_dependencies(Files) ->
@@ -306,7 +315,8 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
     module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
 
 write_appup(App, OldVer, NewVer, TargetDir,
-            UpgradeInstructions, DowngradeInstructions, State) ->
+            UpgradeInstructions, DowngradeInstructions,
+            Opts, State) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     %% check for the app either in deps or lib
     DepsEbinDir = filename:join([CurrentBaseDir, "deps",
@@ -328,14 +338,21 @@ write_appup(App, OldVer, NewVer, TargetDir,
                         [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
                  end,
 
+    {ok, AppupTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
+                                                        ?PRIV_DIR, ?APPUP_TEMPLATE])),
     %% write each of the .appup files
     lists:foreach(fun(AppUpFile) ->
-                    ok = file:write_file(AppUpFile,
-                                         io_lib:fwrite(?APPUPFILEFORMAT,
-                                                       [App, rebar3_appup_utils:now_str(),
-                                                        NewVer,
-                                                        OldVer, UpgradeInstructions,
-                                                        OldVer, DowngradeInstructions])),
+                    AppupCtx = dict:from_list([{app, App},
+                                               {now, rebar3_appup_utils:now_str()},
+                                               {new_vsn, NewVer},
+                                               {old_vsn, OldVer},
+                                               {upgrade_instructions,
+                                                    io_lib:fwrite("~.9p", [UpgradeInstructions])},
+                                               {downgrade_instructions,
+                                                    io_lib:fwrite("~.9p", [DowngradeInstructions])}]),
+                    AppUp = mustache:render(binary_to_list(AppupTemplate),
+                                            AppupCtx),
+                    ok = file:write_file(AppUpFile, AppUp),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
                         [OldVer, NewVer, App, AppUpFile])
                   end, AppUpFiles),
