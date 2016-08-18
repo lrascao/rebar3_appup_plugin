@@ -1,8 +1,6 @@
-[{<<"meck">>,
-  {git,"https://github.com/eproxus/meck.git",
-       {ref,"c772db17a7c94e75d20688197f61538d63fe2ae9"}},
-  1},
- {<<"mustache">>,
-  {git,"git://github.com/mojombo/mustache.erl.git",
-       {ref,"5ac1f216f7db5c16f441235b9008050d7c2ffd55"}},
-  0}].
+{"1.1.0",
+[{<<"bbmustache">>,{pkg,<<"bbmustache">>,<<"1.1.0">>},0}]}.
+[
+{pkg_hash,[
+ {<<"bbmustache">>, <<"CE45F99301C5796795EDFC0AE2ED477F81558FB59E2579CC17D7BC42F34278D1">>}]}
+].
