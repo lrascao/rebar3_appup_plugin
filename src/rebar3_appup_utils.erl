@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2016 Luis Rascão.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(rebar3_appup_utils).
 
 -export([prop_check/3,
@@ -5,7 +24,8 @@
          find_files/3,
          find_files_by_ext/2, find_files_by_ext/3,
          now_str/0,
-         get_sub_dirs/1]).
+         get_sub_dirs/1,
+         appup_plugin_appinfo/1]).
 
 %% Helper function for checking values and aborting when needed
 prop_check(true, _, _) -> true;
@@ -58,3 +78,15 @@ get_sub_dirs(Dir) ->
                             false -> false
                         end
                     end, filelib:wildcard(filename:join(Dir, "*"))).
+
+appup_plugin_appinfo(Apps) ->
+    appup_plugin_appinfo(Apps, undefined).
+
+appup_plugin_appinfo([], AppInfo) -> AppInfo;
+appup_plugin_appinfo([AppInfo | Rest], _) ->
+    case rebar_app_info:name(AppInfo) of
+        <<"rebar3_appup_plugin">> ->
+            appup_plugin_appinfo([], AppInfo);
+        _ ->
+            appup_plugin_appinfo(Rest, undefined)
+    end.

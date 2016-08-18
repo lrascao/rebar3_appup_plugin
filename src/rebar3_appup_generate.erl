@@ -1,3 +1,22 @@
+%% -------------------------------------------------------------------
+%%
+%% Copyright (c) 2016 Luis Rascão.  All Rights Reserved.
+%%
+%% This file is provided to you under the Apache License,
+%% Version 2.0 (the "License"); you may not use this file
+%% except in compliance with the License.  You may obtain
+%% a copy of the License at
+%%
+%%   http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing,
+%% software distributed under the License is distributed on an
+%% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+%% KIND, either express or implied.  See the License for the
+%% specific language governing permissions and limitations
+%% under the License.
+%%
+%% -------------------------------------------------------------------
 -module(rebar3_appup_generate).
 
 -export([init/1,
@@ -7,9 +26,13 @@
 -define(PROVIDER, generate).
 -define(DEPS, []).
 
+-define(PRIV_DIR, "priv").
+-define(APPUP_TEMPLATE, "templates/appup.tpl").
 -define(APPUPFILEFORMAT, "%% appup generated for ~p by rebar3_appup_plugin (~p)~n"
         "{~p,\n\t[{~p, \n\t\t~p}], \n\t[{~p, \n\t\t~p}\n]}.~n").
 -define(DEFAULT_RELEASE_DIR, "rel").
+-define(DEFAULT_PRE_PURGE, brutal_purge).
+-define(DEFAULT_POST_PURGE, brutal_purge).
 
 %% ===================================================================
 %% Public API
@@ -26,7 +49,12 @@ init(State) ->
                 {previous, $p, "previous", string, "location of the previous release"},
                 {previous_version, $p, "previous_version", string, "version of the previous release"},
                 {current, $c, "current", string, "location of the current release"},
-                {target_dir, $t, "target_dir", string, "target dir in which to generate the .appups to"}
+                {target_dir, $t, "target_dir", string, "target dir in which to generate the .appups to"},
+                {purge, $g, "purge", string, "per-module semi-colon separated list purge type "
+                                             "Module=PrePurge/PostPurge, reserved name default for "
+                                             "modules that are unspecified:"
+                                             "(eg. default=soft;m1=soft/brutal;m2=brutal)"
+                                             "default is brutal"}
             ]},
             {example, "rebar3 appup generate"},
             {short_desc, "Compare two different releases and generate the .appup file"},
@@ -38,6 +66,12 @@ init(State) ->
 do(State) ->
     {Opts, _} = rebar_state:command_parsed_args(State),
     rebar_api:debug("opts: ~p~n", [Opts]),
+
+    %% search for this plugin's appinfo in order to know
+    %% where to look for the mustache templates
+    Apps = rebar_state:all_plugin_deps(State),
+    PluginInfo = rebar3_appup_utils:appup_plugin_appinfo(Apps),
+    PluginDir = rebar_app_info:dir(PluginInfo),
 
     RelxConfig = rebar_state:get(State, relx, []),
     {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
@@ -79,8 +113,6 @@ do(State) ->
     rebar_api:debug("previous release, name: ~p, version: ~p",
         [PreviousName, PreviousVer]),
 
-    ModDeps = [],
-
     %% Run some simple checks
     true = rebar3_appup_utils:prop_check(CurrentVer =/= PreviousVer,
                       "current (~p) and previous (~p) .rel versions match",
@@ -106,12 +138,19 @@ do(State) ->
     UpgradeApps = gen_appup_which_apps(Upgraded, CurrentAppUpApps),
     rebar_api:debug("generating .appup for apps: ~p", [UpgradeApps]),
 
+    PurgeOpts0 = proplists:get_value(purge, Opts, []),
+    PurgeOpts = parse_purge_opts(PurgeOpts0),
+
+    AppupOpts = [{purge_opts, PurgeOpts},
+                 {plugin_dir, PluginDir}],
+    rebar_api:debug("appup opts: ~p", [AppupOpts]),
+
     %% Generate appup files for apps
     lists:foreach(fun(App) ->
                     generate_appup_files(TargetDir,
                                          CurrentRelPath, PreviousRelPath,
-                                         ModDeps, App,
-                                         State)
+                                         App,
+                                         AppupOpts, State)
                   end, UpgradeApps),
     {ok, State}.
 
@@ -122,6 +161,34 @@ format_error(Reason) ->
 %% ===================================================================
 %% Private API
 %% ===================================================================
+parse_purge_opts(Opts0) when is_list(Opts0) ->
+    Opts1 = re:split(Opts0, ";"),
+    lists:map(fun(Opt) ->
+                case re:split(Opt, "=") of
+                    [Module, PrePostPurge] ->
+                        case re:split(PrePostPurge, "/") of
+                            [PrePurge, PostPurge] -> ok;
+                            [PrePostPurge] ->
+                                PrePurge = PrePostPurge,
+                                PostPurge = PrePostPurge
+                        end,
+                        {list_to_atom(binary_to_list(Module)),
+                          {purge_opt(PrePurge), purge_opt(PostPurge)}};
+                    _ -> []
+                end
+              end, Opts1).
+
+purge_opt(<<"soft">>) -> soft_purge;
+purge_opt(<<"brutal">>) -> brutal_purge.
+
+get_purge_opts(Name, Opts) ->
+    {DefaultPrePurge, DefaultPostPurge} = proplists:get_value(default, Opts,
+                                                            {?DEFAULT_PRE_PURGE,
+                                                             ?DEFAULT_POST_PURGE}),
+    {PrePurge, PostPurge} = proplists:get_value(Name, Opts,
+                                                {DefaultPrePurge, DefaultPostPurge}),
+    {PrePurge, PostPurge}.
+
 deduce_previous_version(Name, CurrentVersion, RelPath) ->
     Versions = rebar3_appup_rel_utils:get_release_versions(Name, RelPath),
     case length(Versions) of
@@ -181,11 +248,11 @@ gen_appup_which_apps(UpgradedApps, [First|Rest]) ->
 gen_appup_which_apps(Apps, []) ->
     Apps.
 
-generate_appup_files(_, _, _, _, {upgrade, _App, {undefined, _}}, _) -> ok;
+generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
-                     ModDeps, {upgrade, App, {OldVer, NewVer}},
-                     State) ->
+                     {upgrade, App, {OldVer, NewVer}},
+                     Opts, State) ->
     OldRelEbinDir = filename:join([OldVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ OldVer, "ebin"]),
     NewRelEbinDir = filename:join([NewVerPath, "lib",
@@ -194,13 +261,19 @@ generate_appup_files(TargetDir,
     {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
                                                                  OldRelEbinDir),
 
-    ChangedNames = [list_to_atom(file_to_name(F)) || {F, _} <- ChangedFiles],
-    ModDeps1 = [{N, [M1 || M1 <- M, lists:member(M1, ChangedNames)]}
-                || {N, M} <- ModDeps],
+    %% generate a module dependency tree
+    ModDeps = module_dependencies(AddedFiles ++ DeletedFiles ++ ChangedFiles),
+    rebar_api:debug("deps: ~p", [ModDeps]),
 
-    Added = [generate_instruction(add_module, File) || File <- AddedFiles],
-    Deleted = [generate_instruction(delete_module, File) || File <- DeletedFiles],
-    Changed = [generate_instruction(upgrade, ModDeps1, File) || File <- ChangedFiles],
+    Added = lists:map(fun(File) ->
+                        generate_instruction(add_module, ModDeps, File, Opts)
+                      end, AddedFiles),
+    Deleted = lists:map(fun(File) ->
+                            generate_instruction(delete_module, ModDeps, File, Opts)
+                        end, DeletedFiles),
+    Changed = lists:map(fun(File) ->
+                            generate_instruction(upgrade, ModDeps, File, Opts)
+                        end, ChangedFiles),
 
     UpgradeInstructions = lists:append([Added, Deleted, Changed]),
     DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
@@ -208,11 +281,42 @@ generate_appup_files(TargetDir,
 
     ok = write_appup(App, OldVer, NewVer, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
-                     State),
+                     Opts, State),
     ok.
 
+module_dependencies(Files) ->
+    %% build a unique list of directories holding the supplied files
+    Dirs0 = lists:map(fun({File, _}) ->
+                            filename:dirname(File);
+                         (File) ->
+                            filename:dirname(File)
+                      end, Files),
+    Dirs = lists:usort(Dirs0),
+    %% start off xref
+    {ok, _} = xref:start(xref),
+    %% add each of the directories to the xref path
+    lists:foreach(fun(Dir) ->
+                    {ok, _} = xref:add_directory(xref, Dir)
+                  end, Dirs),
+    Mods = [list_to_atom(file_to_name(F)) || {F, _} <- Files],
+    module_dependencies(Mods, Mods, []).
+
+module_dependencies([], _Mods, Acc) ->
+    xref:stop(xref),
+    Acc;
+module_dependencies([Mod | Rest], Mods, Acc) ->
+    {ok, Deps0} = xref:analyze(xref, {module_call, Mod}),
+    %% remove self
+    Deps1 = Deps0 -- [Mod],
+    %% intersect with modules being changed
+    Set0 = sets:from_list(Deps1),
+    Set1 = sets:from_list(Mods),
+    Deps = sets:to_list(sets:intersection(Set0, Set1)),
+    module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
+
 write_appup(App, OldVer, NewVer, TargetDir,
-            UpgradeInstructions, DowngradeInstructions, State) ->
+            UpgradeInstructions, DowngradeInstructions,
+            Opts, State) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     %% check for the app either in deps or lib
     DepsEbinDir = filename:join([CurrentBaseDir, "deps",
@@ -234,59 +338,86 @@ write_appup(App, OldVer, NewVer, TargetDir,
                         [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
                  end,
 
+    {ok, AppupTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
+                                                        ?PRIV_DIR, ?APPUP_TEMPLATE])),
     %% write each of the .appup files
     lists:foreach(fun(AppUpFile) ->
-                    ok = file:write_file(AppUpFile,
-                                         io_lib:fwrite(?APPUPFILEFORMAT,
-                                                       [App, rebar3_appup_utils:now_str(),
-                                                        NewVer,
-                                                        OldVer, UpgradeInstructions,
-                                                        OldVer, DowngradeInstructions])),
+                    AppupCtx = dict:from_list([{app, App},
+                                               {now, rebar3_appup_utils:now_str()},
+                                               {new_vsn, NewVer},
+                                               {old_vsn, OldVer},
+                                               {upgrade_instructions,
+                                                    io_lib:fwrite("~.9p", [UpgradeInstructions])},
+                                               {downgrade_instructions,
+                                                    io_lib:fwrite("~.9p", [DowngradeInstructions])}]),
+                    AppUp = mustache:render(binary_to_list(AppupTemplate),
+                                            AppupCtx),
+                    ok = file:write_file(AppUpFile, AppUp),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
                         [OldVer, NewVer, App, AppUpFile])
                   end, AppUpFiles),
     ok.
 
-generate_instruction(add_module, File) ->
+generate_instruction(add_module, ModDeps, File, _Opts) ->
     Name = list_to_atom(file_to_name(File)),
-    {add_module, Name};
-generate_instruction(delete_module, File) ->
+    Deps = proplists:get_value(Name, ModDeps, []),
+    {add_module, Name, Deps};
+generate_instruction(delete_module, ModDeps, File, _Opts) ->
     Name = list_to_atom(file_to_name(File)),
+    _Deps = proplists:get_value(Name, ModDeps, []),
+    % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
+    % {delete_module, Name, Deps};
     {delete_module, Name};
-generate_instruction(added_application, Application) ->
+generate_instruction(added_application, Application, _, _Opts) ->
     {add_application, Application, permanent};
-generate_instruction(removed_application, Application) ->
+generate_instruction(removed_application, Application, _, _Opts) ->
     {remove_application, Application};
-generate_instruction(restarted_application, Application) ->
-    {restart_application, Application}.
-
-generate_instruction(upgrade, ModDeps, {File, _}) ->
+generate_instruction(restarted_application, Application, _, _Opts) ->
+    {restart_application, Application};
+generate_instruction(upgrade, ModDeps, {File, _}, Opts) ->
     {ok, {Name, List}} = beam_lib:chunks(File, [attributes, exports]),
     Behavior = get_behavior(List),
     CodeChange = is_code_change(List),
     Deps = proplists:get_value(Name, ModDeps, []),
-    generate_instruction_advanced(Name, Behavior, CodeChange, Deps).
+    generate_instruction_advanced(Name, Behavior, CodeChange, Deps, Opts).
 
-generate_instruction_advanced(Name, undefined, undefined, Deps) ->
+generate_instruction_advanced(Name, undefined, undefined, Deps, Opts) ->
+    PurgeOpts = proplists:get_value(purge_opts, Opts, []),
+    {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
     %% Not a behavior or code change, assume purely functional
-    {load_module, Name, Deps};
-generate_instruction_advanced(Name, [supervisor], _, _) ->
+    {load_module, Name, PrePurge, PostPurge, Deps};
+generate_instruction_advanced(Name, [supervisor], _, _, _Opts) ->
     %% Supervisor
     {update, Name, supervisor};
-generate_instruction_advanced(Name, _, code_change, Deps) ->
+generate_instruction_advanced(Name, _, code_change, Deps, Opts) ->
+    PurgeOpts = proplists:get_value(purge_opts, Opts, []),
+    {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
     %% Includes code_change export
-    {update, Name, {advanced, []}, Deps};
-generate_instruction_advanced(Name, _, _, Deps) ->
+    {update, Name, {advanced, []}, PrePurge, PostPurge, Deps};
+generate_instruction_advanced(Name, _, _, Deps, Opts) ->
+    PurgeOpts = proplists:get_value(purge_opts, Opts, []),
+    {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
     %% Anything else
-    {load_module, Name, Deps}.
+    {load_module, Name, PrePurge, PostPurge, Deps}.
 
-invert_instruction({load_module, Name, Deps}) -> {load_module, Name, Deps};
-invert_instruction({add_module, Name}) -> {delete_module, Name};
-invert_instruction({delete_module, Name}) -> {add_module, Name};
-invert_instruction({add_application, Application, permanent}) -> {remove_application, Application};
-invert_instruction({remove_application, Application}) -> {add_application, Application, permanent};
-invert_instruction({update, Name, supervisor}) -> {update, Name, supervisor};
-invert_instruction({update, Name, {advanced, []}, Deps}) -> {update, Name, {advanced, []}, Deps}.
+invert_instruction({load_module, Name, PrePurge, PostPurge, Deps}) ->
+    {load_module, Name, PrePurge, PostPurge, Deps};
+invert_instruction({add_module, Name, _Deps}) ->
+    % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
+    % {delete_module, Name, Deps};
+    {delete_module, Name};
+invert_instruction({delete_module, Name}) ->
+    % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
+    % {add_module, Name, Deps};
+    {add_module, Name};
+invert_instruction({add_application, Application, permanent}) ->
+    {remove_application, Application};
+invert_instruction({remove_application, Application}) ->
+    {add_application, Application, permanent};
+invert_instruction({update, Name, supervisor}) ->
+    {update, Name, supervisor};
+invert_instruction({update, Name, {advanced, []}, PrePurge, PostPurge, Deps}) ->
+    {update, Name, {advanced, []}, PrePurge, PostPurge, Deps}.
 
 get_behavior(List) ->
     Attributes = proplists:get_value(attributes, List),
