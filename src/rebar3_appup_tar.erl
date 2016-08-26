@@ -60,15 +60,14 @@ do(State) ->
     RelDir = filename:join([rebar_dir:base_dir(State),
                             ?DEFAULT_RELEASE_DIR]),
     CurrentRelPath = filename:join([RelDir, Name]),
-    rebar_api:debug("current release: ~p~n", [CurrentRelPath]),
 
     CurrentBaseDir = rebar_dir:base_dir(State),
     LibDir = filename:join([CurrentBaseDir, "lib"]),
 
     {CurrentName, Version} = rebar3_appup_rel_utils:get_rel_release_info(
                                             Name, CurrentRelPath),
-    rebar_api:debug("current release, name: ~p, version: ~p",
-        [CurrentName, Version]),
+    rebar_api:debug("current release, path: ~p, name: ~p, version: ~p",
+        [CurrentRelPath, CurrentName, Version]),
 
     %% search for this plugin's appinfo in order to know
     %% where to look for the mustache templates
@@ -127,11 +126,23 @@ handle_upgrade_instruction(UpFromVersion,
     case proplists:get_value(state_record_name, ToData, undefined) of
         undefined -> ok;
         StateRecordName ->
-            rebar_api:debug("gen_server ~p state record ~p upgrade from ~p to ~p\n",
-                [Module, StateRecordName, UpFromVersion, Version]),
-            do_state_record_migration(Module,
-                                      UpFromVersion, FromData,
-                                      Version, ToData, Opts)
+            %% now check if there are any change in the state record structure
+            %% from the previous to this version
+            OldRecordFields = proplists:get_value(state_record_fields, FromData),
+            NewRecordFields = proplists:get_value(state_record_fields, ToData),
+            case NewRecordFields =/= OldRecordFields of
+              true ->
+                rebar_api:debug("gen_server ~p state record ~p upgrade from ~p to ~p",
+                    [Module, StateRecordName, UpFromVersion, Version]),
+                rebar_api:debug("\told record fields: ~p",
+                    [OldRecordFields]),
+                rebar_api:debug("\tnew record fields: ~p",
+                    [NewRecordFields]),
+                do_state_record_migration(Module,
+                                          UpFromVersion, FromData,
+                                          Version, ToData, Opts);
+              false -> ok
+            end
     end,
     handle_upgrade_instruction(UpFromVersion, Rest, Opts);
 handle_upgrade_instruction(UpFromVersion, [_ | Rest], Opts) ->
