@@ -29,6 +29,7 @@
 -define(DEFAULT_RELEASE_DIR, "rel").
 -define(PRIV_DIR, "priv").
 -define(CONVERT_TEMPLATE, "templates/convert.tpl").
+-define(CONVERT_AUX_TEMPLATE, "templates/convert_aux.tpl").
 -define(CONVERT_CALL_TEMPLATE, "templates/convert_call.tpl").
 
 %% ===================================================================
@@ -243,13 +244,15 @@ do_state_record_migration(Module,
     StateRecordName = proplists:get_value(state_record_name, ToData),
     %% get the abstract to inject code into
     Forms0 = proplists:get_value(abstract_code, ToData),
+    FromRecordFields = proplists:get_value(state_record_fields, FromData),
+    ToRecordFields = proplists:get_value(state_record_fields, ToData),
+    Module = proplists:get_value(module, ToData),
     % inject the method that converts from one record to the other
     %% build the required arguments for the mustache template
     {ok, ConvertTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
                                                           ?PRIV_DIR, ?CONVERT_TEMPLATE])),
-    FromRecordFields = proplists:get_value(state_record_fields, FromData),
-    ToRecordFields = proplists:get_value(state_record_fields, ToData),
-    Module = proplists:get_value(module, ToData),
+    {ok, ConvertAuxTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
+                                                            ?PRIV_DIR, ?CONVERT_AUX_TEMPLATE])),
     ConvertCtx = [{"module", atom_to_list(Module)},
                   {"old_state_record_name",
                       atom_to_list(apply_version_record_name(StateRecordName, FromVersion))},
@@ -258,8 +261,18 @@ do_state_record_migration(Module,
                       [[{old, [{state_record_fields, FromRecordFields}]},
                                {new, [{state_record_fields, ToRecordFields}]}]])}
                  ],
+    ConvertAuxCtx = [{"module", atom_to_list(Module)},
+                     {"old_state_record_name",
+                        atom_to_list(apply_version_record_name(StateRecordName, FromVersion))},
+                     {"state_record_name", atom_to_list(StateRecordName)},
+                     {"vsn_data", io_lib:format("~p",
+                        [[{old, [{state_record_fields, FromRecordFields}]},
+                                 {new, [{state_record_fields, ToRecordFields}]}]])}
+                    ],
     Convert = bbmustache:render(ConvertTemplate, ConvertCtx),
+    ConvertAux = bbmustache:render(ConvertAuxTemplate, ConvertAuxCtx),
     ConvertForm = to_abstract(binary_to_list(Convert)),
+    ConvertAuxForm = to_abstract(binary_to_list(ConvertAux)),
 
     %% inject the abstract code for the old record
     OldStateRecordAbst = proplists:get_value(state_record_abstract_code, FromData),
@@ -267,21 +280,25 @@ do_state_record_migration(Module,
                                                    FromVersion),
     %% inject the old record version in the new beam code
     Forms1 = inject_record(OldStateRecordName, OldStateRecordAbst, Forms0),
+    %% inject the auxilliary method for record conversion
+    Forms2 = inject_method(ConvertAuxForm, Forms1),
     %% inject the method that performs the record conversion
-    Forms2 = inject_method(ConvertForm, Forms1),
+    Forms3 = inject_method(ConvertForm, Forms2),
     %% inject an invocation at the top of the code_change method
     %% so that the record is converted
-    Forms = inject_code_change_convert_call(Forms2, Opts),
+    Forms = inject_code_change_convert_call(Forms3, Opts),
 
     %% now recompile the injected abstract code and rewrite the
     %% current version .beam file
     CompileInfo = proplists:get_value(compile_info, ToData),
-    {ok, Module, Binary, _Warnings} = compile:forms(Forms,
-                                                    CompileInfo ++
-                                                    [binary, debug_info, return]),
-    ToBeam = proplists:get_value(beam, ToData),
-    ok = file:write_file(ToBeam, Binary),
-    ok.
+    case compile:forms(Forms, CompileInfo ++ [binary, debug_info, return]) of
+      {ok, Module, Binary, _Warnings} ->
+        ToBeam = proplists:get_value(beam, ToData),
+        ok = file:write_file(ToBeam, Binary);
+      {error, Errors, Warnings} ->
+        rebar_api:abort("code conversion injection failed due to ~p, warnings: ~p",
+          [Errors, Warnings])
+    end.
 
 extract_record(RecordName, Forms) ->
     [RecordAbst] =
