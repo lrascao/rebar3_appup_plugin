@@ -383,8 +383,8 @@ soft_purge_test(Config) when is_list(Config) ->
                         DowngradeResult = proplists:get_value(downgrade_result, State),
                         %% since this is a soft purge we expect an error from the release
                         %% handler
-                        % escript: exception error: no case clause matching {error,{old_processes,relapp_m1}}
-                        true = ({error,127} =:= DowngradeResult),
+                        % ERROR: unable to install '1.0.15' - old processes still running code from module relapp_m1
+                        true = ({error,3} =:= DowngradeResult),
                         State
                       end,
     ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
