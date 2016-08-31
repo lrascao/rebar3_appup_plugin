@@ -60,8 +60,13 @@ do(State) ->
                             rebar_api:info("Compiling ~s",
                                 [filename:basename(Source)]),
                             Target = appup_file_target(AppInfo),
-                            {ok, AppupTerm} = evaluate(Source),
-                            compile(AppupTerm, Target, Opts);
+                            case evaluate(Source) of
+                                {ok, AppupTerm} ->
+                                    compile(AppupTerm, Target, Opts);
+                                {error, Reason} ->
+                                    rebar_api:abort("failed to compile ~p: ~p",
+                                        [Source, Reason])
+                            end;
                         false -> ok
                     end
                   end, Apps),
