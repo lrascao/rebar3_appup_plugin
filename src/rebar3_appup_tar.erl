@@ -131,7 +131,8 @@ handle_upgrade_instruction(UpFromVersion,
             %% from the previous to this version
             OldRecordFields = proplists:get_value(state_record_fields, FromData),
             NewRecordFields = proplists:get_value(state_record_fields, ToData),
-            case NewRecordFields =/= OldRecordFields of
+            case OldRecordFields =/= undefined andalso
+                 NewRecordFields =/= OldRecordFields of
               true ->
                 rebar_api:debug("gen_server ~p state record ~p upgrade from ~p to ~p",
                     [Module, StateRecordName, UpFromVersion, Version]),
@@ -151,6 +152,13 @@ handle_upgrade_instruction(UpFromVersion, [_ | Rest], Opts) ->
 
 get_gen_server_data(App, RelDir, Version, ModuleStr) ->
     Beam = beam_rel_path(App, RelDir, Version, ModuleStr),
+    case filelib:is_file(Beam) of
+      true ->
+        get_gen_server_data(Beam, Version, ModuleStr);
+      false -> []
+    end.
+
+get_gen_server_data(Beam, Version, ModuleStr) ->
     {module, Module} = load_module_from_beam(Beam, list_to_atom(ModuleStr)),
     Attributes = Module:module_info(attributes),
     Exports = Module:module_info(exports),
