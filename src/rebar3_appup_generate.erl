@@ -78,7 +78,7 @@ do(State) ->
     Name = atom_to_list(Name0),
     rebar_api:debug("release name: ~p", [Name]),
 
-    %% previous is a mandatory option
+    %% check for overload of the current release
     CurrentRelPath = case proplists:get_value(current, Opts, undefined) of
                         undefined ->
                             filename:join([rebar_dir:base_dir(State),
@@ -86,7 +86,13 @@ do(State) ->
                                            Name]);
                         Path -> Path
                      end,
-    %% if not specified the previous version if the current rel path
+    %% extract the current release data
+    {CurrentName, CurrentVer} = rebar3_appup_rel_utils:get_rel_release_info(
+                                            Name, CurrentRelPath),
+    rebar_api:debug("current release, name: ~p, version: ~p",
+        [CurrentName, CurrentVer]),
+
+    %% if not specified the previous version is the current rel path
     PreviousRelPath = case proplists:get_value(previous, Opts, undefined) of
                         undefined -> CurrentRelPath;
                         P -> P
@@ -96,18 +102,14 @@ do(State) ->
     rebar_api:debug("current release: ~p~n", [CurrentRelPath]),
     rebar_api:debug("target dir: ~p~n", [TargetDir]),
 
-    {CurrentName, CurrentVer} = rebar3_appup_rel_utils:get_rel_release_info(
-                                            Name, CurrentRelPath),
-    rebar_api:debug("current release, name: ~p, version: ~p",
-        [CurrentName, CurrentVer]),
-
     %% deduce the previous version from the release path
     {PreviousName, _PreviousVer0} = rebar3_appup_rel_utils:get_rel_release_info(Name,
-                                                                               PreviousRelPath),
+                                                                                PreviousRelPath),
     %% if a specific one was requested use that instead
     PreviousVer = case proplists:get_value(previous_version, Opts, undefined) of
                     undefined ->
-                        deduce_previous_version(Name, CurrentVer, PreviousRelPath);
+                        deduce_previous_version(Name, CurrentVer,
+                                                CurrentRelPath, PreviousRelPath);
                     V -> V
                   end,
     rebar_api:debug("previous release, name: ~p, version: ~p",
@@ -115,10 +117,10 @@ do(State) ->
 
     %% Run some simple checks
     true = rebar3_appup_utils:prop_check(CurrentVer =/= PreviousVer,
-                      "current (~p) and previous (~p) .rel versions match",
+                      "current (~p) and previous (~p) release versions are the same",
                       [CurrentVer, PreviousVer]),
     true = rebar3_appup_utils:prop_check(CurrentName == PreviousName,
-                      "current (~p) and previous (~p) release names do not match",
+                      "current (~p) and previous (~p) release names are not the same",
                       [CurrentName, PreviousName]),
 
     %% Find all the apps that have been upgraded
@@ -189,17 +191,24 @@ get_purge_opts(Name, Opts) ->
                                                 {DefaultPrePurge, DefaultPostPurge}),
     {PrePurge, PostPurge}.
 
-deduce_previous_version(Name, CurrentVersion, RelPath) ->
-    Versions = rebar3_appup_rel_utils:get_release_versions(Name, RelPath),
+deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) ->
+    Versions = rebar3_appup_rel_utils:get_release_versions(Name, PreviousRelPath),
     case length(Versions) of
-        N when N =:= 1 ->
+        N when N =:= 1 andalso CurrentRelPath =:= PreviousRelPath ->
             rebar_api:abort("only 1 version is present in ~p (~p) expecting at least 2",
-                [RelPath, Versions]);
-        N when N =:= 2 ->
+                [PreviousRelPath, hd(Versions)]);
+        %% the case below means the user requested the --previous option and there is exactly
+        %% one release in that path, use that one
+        N when N =:= 1 ->
+            hd(Versions);
+        %% there are two releases and the user didn't request an alternative previous
+        %% release path, infer the old one
+        N when N =:= 2 andalso CurrentRelPath =:= PreviousRelPath ->
             hd(Versions -- [CurrentVersion]);
-        N when N > 2 ->
-            rebar_api:abort("more than 2 versions are present in ~p, please use the --previous_version "
-                            "option to choose which version to upgrade from: ~p", [RelPath, Versions])
+        N when N >= 2 ->
+            rebar_api:abort("more than 2 versions are present in ~p: (~.0p), please use the --previous_version "
+                            "option to choose which version to upgrade from",
+                            [PreviousRelPath, Versions])
     end.
 
 get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->

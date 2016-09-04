@@ -19,13 +19,13 @@
 %% -------------------------------------------------------------------
 {application, rebar3_appup_plugin, [
         {description, "A rebar3 plugin for handling .appup files"},
-        {vsn, "2.0.1"},
+        {vsn, "2.0.2"},
         {registered, []},
         {applications,
             [
                 kernel,
                 stdlib,
-                mustache
+                bbmustache
             ]},
         {env,[]},
         {modules, []},
