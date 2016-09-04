@@ -25,7 +25,7 @@
             [
                 kernel,
                 stdlib,
-                mustache
+                bbmustache
             ]},
         {env,[]},
         {modules, []},
