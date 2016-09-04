@@ -89,7 +89,7 @@ do(State) ->
                         {plugin_dir, PluginDir}],
                 handle_upgrade(Upgrade, Opts);
               false ->
-                rebar_api:abort("unable to find version ~p in appup ~p",
+                rebar_api:debug("unable to find version ~p in appup ~p",
                   [Version, Appup])
             end;
         _ -> ok
@@ -117,31 +117,36 @@ handle_upgrade_instruction(UpFromVersion,
     App = proplists:get_value(app, Opts),
     RelDir = proplists:get_value(rel_dir, Opts),
 
-    FromData = get_gen_server_data(App, RelDir,
-                                   UpFromVersion,
-                                   atom_to_list(Module)),
     ToData = get_gen_server_data(App, RelDir,
                                  Version,
-                                 atom_to_list(Module)),
+                                 atom_to_list(Module),
+                                 undefined),
+    CurrentStateRecordName = proplists:get_value(state_record_name, ToData,
+                                                 undefined),
+    %% the previous might not have had the omniescience
+    %% of declaring the state record name, for that case
+    %% we pass the state record name of the current version
+    %% for it to be used instead
+    FromData = get_gen_server_data(App, RelDir,
+                                   UpFromVersion,
+                                   atom_to_list(Module),
+                                   CurrentStateRecordName),
 
     case proplists:get_value(state_record_name, ToData, undefined) of
         undefined -> ok;
-        StateRecordName ->
+        _ ->
             %% now check if there are any change in the state record structure
             %% from the previous to this version
             OldRecordFields = proplists:get_value(state_record_fields, FromData),
             NewRecordFields = proplists:get_value(state_record_fields, ToData),
-            case NewRecordFields =/= OldRecordFields of
+            case OldRecordFields =/= undefined andalso
+                 NewRecordFields =/= OldRecordFields of
               true ->
-                rebar_api:debug("gen_server ~p state record ~p upgrade from ~p to ~p",
-                    [Module, StateRecordName, UpFromVersion, Version]),
-                rebar_api:debug("\told record fields: ~p",
-                    [OldRecordFields]),
-                rebar_api:debug("\tnew record fields: ~p",
-                    [NewRecordFields]),
                 do_state_record_migration(Module,
                                           UpFromVersion, FromData,
-                                          Version, ToData, Opts);
+                                          Version, ToData, Opts),
+                rebar_api:info("Injected code for state record migration of process ~p from ~p to ~p",
+                  [Module, UpFromVersion, Version]);
               false -> ok
             end
     end,
@@ -149,8 +154,15 @@ handle_upgrade_instruction(UpFromVersion,
 handle_upgrade_instruction(UpFromVersion, [_ | Rest], Opts) ->
     handle_upgrade_instruction(UpFromVersion, Rest, Opts).
 
-get_gen_server_data(App, RelDir, Version, ModuleStr) ->
+get_gen_server_data(App, RelDir, Version, ModuleStr, StateRecordName) ->
     Beam = beam_rel_path(App, RelDir, Version, ModuleStr),
+    case filelib:is_file(Beam) of
+      true ->
+        get_gen_server_data(Beam, Version, ModuleStr, StateRecordName);
+      false -> []
+    end.
+
+get_gen_server_data(Beam, Version, ModuleStr, StateRecordName0) ->
     {module, Module} = load_module_from_beam(Beam, list_to_atom(ModuleStr)),
     Attributes = Module:module_info(attributes),
     Exports = Module:module_info(exports),
@@ -162,9 +174,16 @@ get_gen_server_data(App, RelDir, Version, ModuleStr) ->
                 {raw_abstract_v1, Code} ->
                     epp:interpret_file_attribute(Code)
               end,
-    StateData = case proplists:get_value(state_record, Attributes, undefined) of
+    StateRecordName = proplists:get_value(state_record, Attributes,
+                                          StateRecordName0),
+    StateData = case StateRecordName of
                     undefined -> [{state_record_name, undefined}];
-                    [StateRecordName] ->
+                    %% we have something in the attributes
+                    %% it comes inside a list
+                    [S] ->
+                        get_state_data(Module, S, Forms);
+                    %% we use what we were passed
+                    _ ->
                         get_state_data(Module, StateRecordName, Forms)
                 end,
     CompileInfo = get_compile_info(Module, Beam),
@@ -350,23 +369,94 @@ inject_code_change_convert_call(Forms, Opts) ->
                  (Form) -> Form
               end, Forms).
 
-inject_code_change_clause({clause, L, Args0, [], Body0}, Opts) ->
+quote(S) ->
+  lists:flatten(io_lib:format("\"~s\"", [S])).
+
+format_literal(string, Literal) -> quote(Literal);
+format_literal(integer, Literal) ->
+    integer_to_list(Literal).
+
+%% code_change(OldVsn, State, Extra) ->
+match_code_change_args([{var, L0, OldVsnVar}, {var, L1, StateVar}, {var, L2, ExtraVar}]) ->
+    NewArgs = [{var, L0, '__OldVsn__'},
+               {var, L1, '__State0__'},
+               {var, L2, '__Extra0__'}],
+    Vars = [{old_vsn_ret, atom_to_list(OldVsnVar)},
+            {old_vsn_arg, "__OldVsn__"},
+            {state_ret, atom_to_list(StateVar)},
+            {extra_ret, atom_to_list(ExtraVar)}],
+    {NewArgs, Vars};
+% code_change({down, OldVsn}, State0, Extra) ->
+match_code_change_args([{tuple, L0, [{atom, _, down}, {var, _, OldVsnVar}]},
+                        {var, L1, StateVar}, {var, L2, ExtraVar}]) ->
+    NewArgs = [{tuple, L0, [{atom, L0, down}, {var, L0, '__OldVsn__'}]},
+               {var, L1, '__State0__'},
+               {var, L2, '__Extra0__'}],
+    Vars = [{old_vsn_ret, atom_to_list(OldVsnVar)},
+            {old_vsn_arg, "{down, __OldVsn__}"},
+            {state_ret, atom_to_list(StateVar)},
+            {extra_ret, atom_to_list(ExtraVar)}],
+    {NewArgs, Vars};
+% code_change({down, "1.0.9" | 298571625185962019378328193930557187913}, State, Extra) ->
+match_code_change_args([{tuple, L0, [{atom, _, down}, {LiteralType, _, OldVsnLiteral}]},
+                        {var, L1, StateVar}, {var, L2, ExtraVar}]) ->
+    NewArgs = [{tuple, L0, [{atom, L0, down}, {LiteralType, L0, OldVsnLiteral}]},
+               {var, L1, '__State0__'},
+               {var, L2, '__Extra0__'}],
+    Vars = [{old_vsn_ret, "_"},
+            {old_vsn_arg, io_lib:format("{down, ~s}",
+                                        [format_literal(LiteralType, OldVsnLiteral)])},
+            {state_ret, atom_to_list(StateVar)},
+            {extra_ret, atom_to_list(ExtraVar)}],
+    {NewArgs, Vars};
+% code_change("1.0.9" | 298571625185962019378328193930557187913, State, Extra) ->
+match_code_change_args([{LiteralType, L0, OldVsnLiteral},
+                        {var, L1, StateVar}, {var, L2, ExtraVar}]) ->
+    NewArgs = [{LiteralType, L0, OldVsnLiteral},
+               {var, L1, '__State0__'},
+               {var, L2, '__Extra0__'}],
+    Vars = [{old_vsn_ret, "_"},
+            {old_vsn_arg, format_literal(LiteralType, OldVsnLiteral)},
+            {state_ret, atom_to_list(StateVar)},
+            {extra_ret, atom_to_list(ExtraVar)}],
+    {NewArgs, Vars};
+% any other code change clause is rejected
+match_code_change_args([_, _, _]) ->
+    {undefined, []}.
+
+% TODO - upply the code change line to the call
+apply_code_change_line(_L, AbstConvertCall) -> AbstConvertCall.
+
+inject_code_change_clause({clause, L, Args, [], Body0} = Clause, Opts) ->
     %% modify the args, rename the second argument which is the state to be migrated
     %% and the third one which is the extra options
-    [{var, L0, OldVsnVar}, {var, L1, StateVar}, {var, L2, ExtraVar}] = Args0,
-    Args = [{var, L0, '__OldVsn__'},
-            {var, L1, '__State0__'},
-            {var, L2, '__Extra0__'}],
-    %% now inject the beginning of the body with a call to our convert method
-    {ok, ConvertCallTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
-                                                              ?PRIV_DIR,
-                                                              ?CONVERT_CALL_TEMPLATE])),
-    ConvertCallCtx = [{"old_vsn_var", atom_to_list(OldVsnVar)},
-                      {"state_var", atom_to_list(StateVar)},
-                      {"extra_var", atom_to_list(ExtraVar)}],
-    ConvertCall = bbmustache:render(ConvertCallTemplate, ConvertCallCtx),
-    AbstConvertCall = to_abstract(binary_to_list(ConvertCall)),
-    {clause, L, Args, [], AbstConvertCall ++ Body0}.
+    %% take into account that the first argument can either be a tuple or an atom
+    %% http://erlang.org/doc/man/gen_server.html#Module:code_change-3
+    {NewArgs, Vars} = match_code_change_args(Args),
+    OldVsnArgStr = proplists:get_value(old_vsn_arg, Vars),
+    OldVsnRetStr = proplists:get_value(old_vsn_ret, Vars),
+    StateRetStr = proplists:get_value(state_ret, Vars),
+    ExtraRetStr = proplists:get_value(extra_ret, Vars),
+
+    case NewArgs of
+      undefined ->
+        rebar_api:info("unable to inject code change in unrecognized function clause with args (~p)",
+          [Args]),
+        Clause;
+      _ ->
+        %% now inject the beginning of the body with a call to our convert method
+        {ok, ConvertCallTemplate} = file:read_file(
+                                      filename:join([proplists:get_value(plugin_dir, Opts),
+                                                     ?PRIV_DIR,
+                                                     ?CONVERT_CALL_TEMPLATE])),
+        ConvertCallCtx = [{"old_vsn_arg", OldVsnArgStr},
+                          {"old_vsn_ret", OldVsnRetStr},
+                          {"state_ret", StateRetStr},
+                          {"extra_ret", ExtraRetStr}],
+        ConvertCall = bbmustache:render(ConvertCallTemplate, ConvertCallCtx),
+        AbstConvertCall = apply_code_change_line(L, to_abstract(binary_to_list(ConvertCall))),
+        {clause, L, NewArgs, [], AbstConvertCall ++ Body0}
+    end.
 
 -spec to_abstract(string()) -> erl_parse:abstract_form().
 to_abstract(String) ->

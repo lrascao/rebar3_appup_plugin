@@ -44,7 +44,8 @@ groups() ->
          add_fields_auto_gen_server_state_appup,
          new_simple_module, simple_module_use,
          brutal_purge_test, soft_purge_test,
-         appup_src_scripting]
+         appup_src_scripting,
+         appup_src_extra_argument]
      }].
 
 init_per_suite(Config) ->
@@ -412,6 +413,45 @@ appup_src_scripting(Config) when is_list(Config) ->
                            [{generate_appup, false}], Config),
     ok.
 
+appup_src_extra_argument(doc) -> ["Test .appup.src with extra argument filled in"];
+appup_src_extra_argument(suite) -> [];
+appup_src_extra_argument(Config) when is_list(Config) ->
+    BeforeUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "ok"} = sh("./bin/relapp eval "
+                                            "\"relapp_srv:set_description_id(42).\"",
+                                            [], DeployDir),
+                            State
+                      end,
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Extra} = sh("./bin/relapp eval "
+                                                  "\"relapp_srv:get_extra().\"",
+                                                  [], DeployDir),
+                            true = (Extra =:= "{upgrade,42}"),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, Extra} = sh("./bin/relapp eval "
+                                                  "\"relapp_srv:get_description_id().\"",
+                                                  [], DeployDir),
+                            true = (Extra =:= "{ok,42}"),
+                            State
+                        end,
+    ok = upgrade_downgrade("relapp1", "1.0.18", "1.0.19",
+                           [{before_upgrade, BeforeUpgradeFun},
+                            {after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                              [{update,relapp_srv,
+                                  {advanced,[{arg,upgrade}]},
+                                      brutal_purge,brutal_purge,[]}],
+                              [{update,relapp_srv,
+                                    {advanced, [{arg,downgrade}]},
+                                      brutal_purge,brutal_purge,[]}]
+                           },
+                           [{generate_appup, false}],
+                           Config),
+    ok.
+
 %% -------------------------------------------------------------
 %% Private methods
 %% -------------------------------------------------------------
@@ -568,11 +608,14 @@ check_appup(RelDir, AppName, FromVersion, ToVersion) ->
                                             "_build/default/lib",
                                             AppName, "ebin",
                                             AppName ++ ".appup"])),
-    % log("appup: ~p\n", [EbinAppup]),
     case lists:keysearch(ToVersion, 1, EbinAppup) of
         {value, {ToVersion, UpFromVsn, DownToVsn}} ->
-            [{FromVersion, UpgradeInstructions}] = UpFromVsn,
-            [{FromVersion, DowngradeInstructions}] = DownToVsn,
+            %% ensure that the version to upgrade from is contained in
+            % both structures, upgrade and downgrade
+            UpgradeInstructions = proplists:get_value(FromVersion, UpFromVsn, undefined),
+            true = UpgradeInstructions =/= undefined,
+            DowngradeInstructions = proplists:get_value(FromVersion, DownToVsn, undefined),
+            true = DowngradeInstructions =/= undefined,
             {UpgradeInstructions, DowngradeInstructions};
         _ -> {undefined, undefined}
     end.
