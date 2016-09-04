@@ -1,3 +1,3 @@
-{ {{old_vsn_var}},
-  {{state_var}},
-  {{extra_var}} } = '$convert_state_record$'(__OldVsn__, __State0__, __Extra0__).
+{ {{old_vsn_ret}},
+  {{state_ret}},
+  {{extra_ret}} } = '$convert_state_record$'( {{{old_vsn_arg}}} , __State0__, __Extra0__).
