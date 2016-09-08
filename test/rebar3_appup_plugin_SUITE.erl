@@ -47,7 +47,8 @@ groups() ->
          appup_src_scripting,
          appup_src_extra_argument,
          appup_src_template_vars,
-         appup_src_state_var_scripting]
+         appup_src_state_var_scripting,
+         add_supervisor_worker, remove_supervisor_worker]
      }].
 
 init_per_suite(Config) ->
@@ -133,8 +134,11 @@ new_gen_server_appup(suite) -> [];
 new_gen_server_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.2", "1.0.3",
                            {[{add_module, relapp_srv, []},
-                             {update, relapp_sup, supervisor}],
-                            [{update,relapp_sup,supervisor},
+                             {update, relapp_sup, supervisor},
+                             {apply,{supervisor,restart_child,[relapp_sup,relapp_srv]}}],
+                            [{apply,{supervisor,terminate_child,[relapp_sup,relapp_srv]}},
+                             {apply,{supervisor,delete_child,[relapp_sup,relapp_srv]}},
+                             {update,relapp_sup,supervisor},
                              {delete_module,relapp_srv}]},
                            Config),
     ok.
@@ -214,8 +218,11 @@ new_auto_gen_server_appup(suite) -> [];
 new_auto_gen_server_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.10", "1.0.11",
                            {[{add_module, relapp_srv2, []},
-                             {update, relapp_sup, supervisor}],
-                            [{update,relapp_sup,supervisor},
+                             {update, relapp_sup, supervisor},
+                             {apply,{supervisor,restart_child,[relapp_sup,relapp_srv2]}}],
+                            [{apply,{supervisor,terminate_child,[relapp_sup,relapp_srv2]}},
+                             {apply,{supervisor,delete_child,[relapp_sup,relapp_srv2]}},
+                             {update,relapp_sup,supervisor},
                              {delete_module,relapp_srv2}]},
                            Config),
     ok.
@@ -569,6 +576,81 @@ appup_src_state_var_scripting(Config) when is_list(Config) ->
                            [{generate_appup, false}], Config),
     ok.
 
+add_supervisor_worker(doc) -> ["Ensure that new supervised workers are launched after an "
+                               " upgrade"];
+add_supervisor_worker(suite) -> [];
+add_supervisor_worker(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Res} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            {match, _} = re:run(Res, "relapp_srv3"),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, "false"} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            State
+                        end,
+    ok = upgrade_downgrade("relapp1", "1.0.19", "1.0.20",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                              [{add_module, relapp_srv3,[]},
+                               {update, relapp_sup, supervisor},
+                               {apply, {supervisor, restart_child,
+                                      [relapp_sup, relapp_srv3]}}],
+                              [{apply, {supervisor, terminate_child,
+                                      [relapp_sup, relapp_srv3]}},
+                               {apply, {supervisor, delete_child,
+                                      [relapp_sup, relapp_srv3]}},
+                               {update, relapp_sup, supervisor},
+                               {delete_module, relapp_srv3}]
+                           },
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
+
+remove_supervisor_worker(doc) -> ["Ensure that removed supervised workers are killed after an "
+                               " upgrade"];
+remove_supervisor_worker(suite) -> [];
+remove_supervisor_worker(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "false"} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, Res} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            {match, _} = re:run(Res, "relapp_srv3"),
+                            State
+                        end,
+    ok = upgrade_downgrade("relapp1", "1.0.20", "1.0.21",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                              [{apply, {supervisor, terminate_child,
+                                  [relapp_sup, relapp_srv3]}},
+                               {apply, {supervisor, delete_child,
+                                  [relapp_sup, relapp_srv3]}},
+                               {update, relapp_sup, supervisor},
+                               {delete_module, relapp_srv3}],
+                              [{add_module, relapp_srv3},
+                               {update, relapp_sup, supervisor},
+                               {apply, {supervisor, restart_child,
+                                  [relapp_sup, relapp_srv3]}}]
+                           },
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
 
 %% -------------------------------------------------------------
 %% Private methods
@@ -589,9 +671,19 @@ upgrade_downgrade(App, FromVersion, ToVersion,
     RelAppDir = filename:join(DataDir, App),
     %% check out the from version
     {ok, _} = git_checkout(RelAppDir, FromVersion),
+    case proplists:get_value(delete_appup_src, Opts, false) of
+      true -> file:delete(filename:join([RelAppDir, "apps",
+                                         "relapp", "src", "relapp.appup.src"]));
+      false -> ok
+    end,
     {ok, _} = rebar3_command(RelAppDir, "tar"),
     %% check out the to version
     {ok, _} = git_checkout(RelAppDir, ToVersion),
+    case proplists:get_value(delete_appup_src, Opts, false) of
+      true -> file:delete(filename:join([RelAppDir, "apps",
+                                         "relapp", "src", "relapp.appup.src"]));
+      false -> ok
+    end,
     {ok, _} = rebar3_command(RelAppDir, "release"),
     %% now generate the appup
     case proplists:get_value(generate_appup, Opts, true) of

@@ -131,7 +131,7 @@ compile(AppupTerm, Target) ->
                     ok
             end;
         _ ->
-            rebar_api:abort("Failed to compile not an appup:\n~p~n",
+            rebar_api:abort("Failed to compile not an appup:\n~p",
                 [AppupTerm])
     end.
 

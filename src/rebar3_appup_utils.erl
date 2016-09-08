@@ -30,6 +30,7 @@
          load_module_from_beam/2,
          unload_module_from_beam/2,
          beam_rel_path/2, beam_rel_path/4,
+         get_abstract_code/2,
          tmp_filename/0]).
 
 %% Helper function for checking values and aborting when needed
@@ -105,6 +106,16 @@ appup_plugin_appinfo([AppInfo | Rest], _) ->
             appup_plugin_appinfo(Rest, undefined)
     end.
 
+%% @spec get_abstract_code(atom(),binary() | string()) -> 'encrypted_abstract_code' | 'no_abstract_code' | binary() | [{atom() | integer(),_} | {atom(),atom() | byte(),integer()} | {non_neg_integer(),atom() | tuple(),atom(),byte()}] | {atom(),[any()] | {atom() | tuple(),[any()]}} | {'error','beam_lib',{'not_a_beam_file',string()} | {'file_error',string(),atom() | nonempty_string() | non_neg_integer()} | {'invalid_beam_file',string(),atom() | nonempty_string() | non_neg_integer()} |
+%% {'invalid_chunk',string(),atom() | nonempty_string() | non_neg_integer()} | {'missing_chunk',string(),atom() | nonempty_string() | non_neg_integer()} | {'unknown_chunk',string(),atom() | nonempty_string() | non_neg_integer()} | {'chunk_too_big',string(),nonempty_string(),non_neg_integer(),non_neg_integer()}}.
+get_abstract_code(Module, Beam) ->
+    case beam_lib:chunks(Beam, [abstract_code]) of
+        {ok, {Module, [{abstract_code, AbstractCode}]}} ->
+            AbstractCode;
+        {error, beam_lib, {key_missing_or_invalid, _, _}} ->
+            encrypted_abstract_code;
+        Error -> Error
+    end.
 
 tmp_filename() ->
      lists:flatten(io_lib:format("tmp.appup.~p", [erlang:phash2(make_ref())])).

@@ -67,7 +67,7 @@ init(State) ->
 %% @spec do(rebar_state:t()) -> {'ok',rebar_state:t()} | {'error',string()}.
 do(State) ->
     {Opts, _} = rebar_state:command_parsed_args(State),
-    rebar_api:debug("opts: ~p~n", [Opts]),
+    rebar_api:debug("opts: ~p", [Opts]),
 
     %% search for this plugin's appinfo in order to know
     %% where to look for the mustache templates
@@ -100,9 +100,9 @@ do(State) ->
                         P -> P
                       end,
     TargetDir = proplists:get_value(target_dir, Opts, undefined),
-    rebar_api:debug("previous release: ~p~n", [PreviousRelPath]),
-    rebar_api:debug("current release: ~p~n", [CurrentRelPath]),
-    rebar_api:debug("target dir: ~p~n", [TargetDir]),
+    rebar_api:debug("previous release: ~p", [PreviousRelPath]),
+    rebar_api:debug("current release: ~p", [CurrentRelPath]),
+    rebar_api:debug("target dir: ~p", [TargetDir]),
 
     %% deduce the previous version from the release path
     {PreviousName, _PreviousVer0} = rebar3_appup_rel_utils:get_rel_release_info(Name,
@@ -222,10 +222,10 @@ deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) -
 %% @spec get_apps(string(),atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()]) -> [any()].
 get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
     OldApps = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
-    rebar_api:debug("previous version apps: ~p~n", [OldApps]),
+    rebar_api:debug("previous version apps: ~p", [OldApps]),
 
     NewApps = rebar3_appup_rel_utils:get_rel_apps(Name, NewVer, NewVerPath),
-    rebar_api:debug("current version apps: ~p~n", [NewApps]),
+    rebar_api:debug("current version apps: ~p", [NewApps]),
 
     AddedApps = app_list_diff(NewApps, OldApps),
     rebar_api:debug("added: ~p", [AddedApps]),
@@ -282,9 +282,13 @@ generate_appup_files(TargetDir,
 
     {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
                                                                  OldRelEbinDir),
+    rebar_api:debug("beam files:", []),
+    rebar_api:debug("   added: ~p", [AddedFiles]),
+    rebar_api:debug("   deleted: ~p", [DeletedFiles]),
+    rebar_api:debug("   changed: ~p", [ChangedFiles]),
 
     %% generate a module dependency tree
-    ModDeps = module_dependencies(AddedFiles ++ DeletedFiles ++ ChangedFiles),
+    ModDeps = module_dependencies(AddedFiles ++ ChangedFiles),
     rebar_api:debug("deps: ~p", [ModDeps]),
 
     Added = lists:map(fun(File) ->
@@ -297,9 +301,18 @@ generate_appup_files(TargetDir,
                             generate_instruction(upgrade, ModDeps, File, Opts)
                         end, ChangedFiles),
 
-    UpgradeInstructions = lists:append([Added, Deleted, Changed]),
-    DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
-                                                    UpgradeInstructions)),
+    UpgradeInstructions0 = lists:append([Added, Changed, Deleted]),
+    %% check for updated supervisors, we'll need to check their child spec
+    %% and see if any childs were added or removed
+    UpgradeInstructions1 = apply_supervisor_child_updates(UpgradeInstructions0,
+                                                          Added, Deleted,
+                                                          OldRelEbinDir, NewRelEbinDir),
+    UpgradeInstructions = lists:flatten(UpgradeInstructions1),
+    rebar_api:debug("upgrade instructions: ~p", [UpgradeInstructions]),
+    DowngradeInstructions0 = lists:reverse(lists:map(fun invert_instruction/1,
+                                                     UpgradeInstructions1)),
+    DowngradeInstructions = lists:flatten(DowngradeInstructions0),
+    rebar_api:debug("downgrade instructions: ~p", [DowngradeInstructions]),
 
     ok = write_appup(App, OldVer, NewVer, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
@@ -412,7 +425,7 @@ generate_instruction_advanced(Name, undefined, undefined, Deps, Opts) ->
     {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
     %% Not a behavior or code change, assume purely functional
     {load_module, Name, PrePurge, PostPurge, Deps};
-generate_instruction_advanced(Name, [supervisor], _, _, _Opts) ->
+generate_instruction_advanced(Name, supervisor, _, _, _Opts) ->
     %% Supervisor
     {update, Name, supervisor};
 generate_instruction_advanced(Name, _, code_change, Deps, Opts) ->
@@ -426,6 +439,14 @@ generate_instruction_advanced(Name, _, _, Deps, Opts) ->
     %% Anything else
     {load_module, Name, PrePurge, PostPurge, Deps}.
 
+generate_supervisor_child_instruction(new, Mod, Worker) ->
+    [{update, Mod, supervisor},
+     {apply, {supervisor, restart_child, [Mod, Worker]}}];
+generate_supervisor_child_instruction(remove, Mod, Worker) ->
+    [{apply, {supervisor, terminate_child, [Mod, Worker]}},
+     {apply, {supervisor, delete_child, [Mod, Worker]}},
+     {update, Mod, supervisor}].
+
 invert_instruction({load_module, Name, PrePurge, PostPurge, Deps}) ->
     {load_module, Name, PrePurge, PostPurge, Deps};
 invert_instruction({add_module, Name, _Deps}) ->
@@ -433,7 +454,7 @@ invert_instruction({add_module, Name, _Deps}) ->
     % {delete_module, Name, Deps};
     {delete_module, Name};
 invert_instruction({delete_module, Name}) ->
-    % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
+    % TODO: add dependencies to add_module, fixed in OTP commit a4290bb3
     % {add_module, Name, Deps};
     {add_module, Name};
 invert_instruction({add_application, Application, permanent}) ->
@@ -443,15 +464,27 @@ invert_instruction({remove_application, Application}) ->
 invert_instruction({update, Name, supervisor}) ->
     {update, Name, supervisor};
 invert_instruction({update, Name, {advanced, []}, PrePurge, PostPurge, Deps}) ->
-    {update, Name, {advanced, []}, PrePurge, PostPurge, Deps}.
+    {update, Name, {advanced, []}, PrePurge, PostPurge, Deps};
+invert_instruction([{update, Name, supervisor},
+                    {apply, {supervisor, restart_child, [Sup, Worker]}}]) ->
+    [{apply, {supervisor, terminate_child, [Sup, Worker]}},
+     {apply, {supervisor, delete_child, [Sup, Worker]}},
+     {update, Name, supervisor}];
+invert_instruction([{apply, {supervisor, terminate_child, [Sup, Worker]}},
+                    {apply, {supervisor, delete_child, [Sup, Worker]}},
+                    {update, Name, supervisor}]) ->
+    [{update, Name, supervisor},
+     {apply, {supervisor, restart_child, [Sup, Worker]}}].
 
 
 %% @spec get_behavior([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> any().
 get_behavior(List) ->
     Attributes = proplists:get_value(attributes, List),
-    case proplists:get_value(behavior, Attributes) of
-        undefined -> proplists:get_value(behaviour, Attributes);
-        Else -> Else
+    case {proplists:get_value(behavior, Attributes),
+          proplists:get_value(behaviour, Attributes)} of
+        {undefined, undefined} -> undefined;
+        {[B],  undefined} -> B;
+        {undefined,  [B]} -> B
     end.
 
 %% @spec is_code_change([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> 'code_change' | 'undefined'.
@@ -464,3 +497,131 @@ is_code_change(List) ->
         false ->
             undefined
     end.
+
+apply_supervisor_child_updates(Instructions, Added, Deleted,
+                               OldRelEbinDir, NewRelEbinDir) ->
+    apply_supervisor_child_updates(Instructions, Added, Deleted,
+                                   OldRelEbinDir, NewRelEbinDir, []).
+
+apply_supervisor_child_updates([], _, _, _, _, Acc) -> Acc;
+apply_supervisor_child_updates([{update, Name, supervisor} | Rest],
+                               Added, Deleted,
+                               OldRelEbinDir, NewRelEbinDir, Acc) ->
+    OldSupervisorSpec = get_supervisor_spec(Name, OldRelEbinDir),
+    NewSupervisorSpec = get_supervisor_spec(Name, NewRelEbinDir),
+    rebar_api:debug("old supervisor spec: ~p",
+            [OldSupervisorSpec]),
+    rebar_api:debug("new supervisor spec: ~p",
+            [NewSupervisorSpec]),
+    Diff = diff_supervisor_spec(OldSupervisorSpec,
+                                NewSupervisorSpec),
+    NewWorkers = proplists:get_value(new_workers, Diff),
+    RemovedWorkers = proplists:get_value(removed_workers, Diff),
+    rebar_api:debug("supervisor workers added: ~p",
+            [NewWorkers]),
+    rebar_api:debug("supervisor workers removed: ~p",
+            [RemovedWorkers]),
+    AddInstructions = [generate_supervisor_child_instruction(new, Name, N) ||
+                        N <- NewWorkers],
+    RemoveInstructions = [generate_supervisor_child_instruction(remove, Name, R) ||
+                            R <- RemovedWorkers],
+    Instructions = ensure_supervisor_update(Name, AddInstructions ++ RemoveInstructions),
+    apply_supervisor_child_updates(Rest, Added, Deleted,
+                                   OldRelEbinDir, NewRelEbinDir,
+                                   Acc ++ Instructions);
+apply_supervisor_child_updates([Else | Rest],
+                               Added, Deleted,
+                               OldRelEbinDir, NewRelEbinDir, Acc) ->
+    apply_supervisor_child_updates(Rest, Added, Deleted,
+                                   OldRelEbinDir, NewRelEbinDir, Acc ++ [Else]).
+
+ensure_supervisor_update(Name, []) ->
+    [{update, Name, supervisor}];
+ ensure_supervisor_update(_, Instructions) ->
+    Instructions.
+
+get_supervisor_spec(Module, EbinDir) ->
+    Beam = rebar3_appup_utils:beam_rel_path(EbinDir, atom_to_list(Module)),
+    {module, Module} = rebar3_appup_utils:load_module_from_beam(Beam, Module),
+    {ok, Arg} = guess_supervisor_init_arg(Module, Beam),
+    rebar_api:debug("supervisor init arg: ~p", [Arg]),
+    Spec = case catch Module:init(Arg) of
+            {ok, S} -> S;
+            _ ->
+                rebar_api:info("could not obtain supervisor ~p spec, unable to generate "
+                               "supervisor appup instructions", [Module]),
+                undefined
+           end,
+    rebar3_appup_utils:unload_module_from_beam(Beam, Module),
+    Spec.
+
+diff_supervisor_spec({_, Spec1}, {_, Spec2}) ->
+    Workers1 = supervisor_spec_workers(Spec1, []),
+    Workers2 = supervisor_spec_workers(Spec2, []),
+    [{new_workers, Workers2 -- Workers1},
+     {removed_workers, Workers1 -- Workers2}];
+diff_supervisor_spec(_, _) ->
+    [{new_workers, []}, {removed_workers, []}].
+
+supervisor_spec_workers([], Acc) -> Acc;
+supervisor_spec_workers([{_, {Mod, _F, _A}, _, _, worker, _} | Rest], Acc) ->
+    supervisor_spec_workers(Rest, Acc ++ [Mod]);
+supervisor_spec_workers([_ | Rest], Acc) ->
+    supervisor_spec_workers(Rest, Acc).
+
+guess_supervisor_init_arg(Module, Beam) ->
+    %% obtain the abstract code and from that try and guess what
+    %% are valid arguments for the supervisor init/1 method
+    Forms =  case rebar3_appup_utils:get_abstract_code(Module, Beam) of
+                no_abstract_code=E ->
+                    {error, E};
+                encrypted_abstract_code=E ->
+                    {error, E};
+                {raw_abstract_v1, Code} ->
+                    epp:interpret_file_attribute(Code)
+              end,
+    {ok, AbsArg} = get_supervisor_init_arg_abstract(Forms),
+    rebar_api:debug("supervisor abstract init arg: ~p", [AbsArg]),
+    Arg = generate_supervisor_init_arg(AbsArg),
+    {ok, Arg}.
+
+get_supervisor_init_arg_abstract(Forms) ->
+    [L] = lists:filtermap(fun({function, _, init, 1, [Clause]}) ->
+                            %% currently not supporting more that one function clause
+                            %% for the Mod:init/1 supervisor callback
+                            %% extract the argument from the function clause
+                            {clause, _, [Arg], _, _} = Clause,
+                            {true, Arg};
+                           (_) -> false
+                        end, Forms),
+    {ok, L}.
+
+generate_supervisor_init_arg({nil, _}) -> [];
+generate_supervisor_init_arg({var, _, _}) -> undefined;
+generate_supervisor_init_arg({cons, _, Head, Rest}) ->
+    [generate_supervisor_init_arg(Head) | generate_supervisor_init_arg(Rest)];
+generate_supervisor_init_arg({integer, _, Value}) -> Value;
+generate_supervisor_init_arg({string, _, Value}) -> Value;
+generate_supervisor_init_arg({atom, _, Value}) -> Value;
+generate_supervisor_init_arg({tuple, _, Elements}) ->
+    L = [generate_supervisor_init_arg(Element) || Element <- Elements],
+    Tuple0 = generate_tuple(length(L)),
+    {Tuple, _} = lists:foldl(fun(E, {T0, Index}) ->
+                                T1 = erlang:setelement(Index, T0, E),
+                                {T1, Index + 1}
+                             end, {Tuple0, 1}, L),
+    Tuple;
+generate_supervisor_init_arg(_) -> undefined.
+
+
+generate_tuple(1) -> {undefined};
+generate_tuple(2) -> {undefined, undefined};
+generate_tuple(3) -> {undefined, undefined, undefined};
+generate_tuple(4) -> {undefined, undefined, undefined, undefined};
+generate_tuple(5) -> {undefined, undefined, undefined, undefined, undefined};
+generate_tuple(6) -> {undefined, undefined, undefined, undefined,
+                      undefined, undefined};
+generate_tuple(7) -> {undefined, undefined, undefined, undefined,
+                      undefined, undefined, undefined};
+generate_tuple(8) -> {undefined, undefined, undefined, undefined,
+                      undefined, undefined, undefined, undefined}.

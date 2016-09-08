@@ -173,7 +173,7 @@ get_gen_server_data(Beam, Version, ModuleStr, StateRecordName0) ->
     {module, Module} = rebar3_appup_utils:load_module_from_beam(Beam, list_to_atom(ModuleStr)),
     Attributes = Module:module_info(attributes),
     Exports = Module:module_info(exports),
-    Forms =  case get_abstract_code(Module, Beam) of
+    Forms =  case rebar3_appup_utils:get_abstract_code(Module, Beam) of
                 no_abstract_code=E ->
                     {error, E};
                 encrypted_abstract_code=E ->
@@ -230,16 +230,6 @@ state_record_info(_Module, RecordName, Forms) ->
                             {{abst_atom_name(RecordFieldName), Acc}, Acc + 1}
                        end, 2, Fields),
     L.
-
-%% @spec get_abstract_code(atom(),binary() | string()) -> 'encrypted_abstract_code' | 'no_abstract_code' | binary() | [{atom() | integer(),_} | {atom(),atom() | byte(),integer()} | {non_neg_integer(),atom() | tuple(),atom(),byte()}] | {atom(),[any()] | {atom() | tuple(),[any()]}} | {'error','beam_lib',{'not_a_beam_file',string()} | {'file_error',string(),atom() | nonempty_string() | non_neg_integer()} | {'invalid_beam_file',string(),atom() | nonempty_string() | non_neg_integer()} | {'invalid_chunk',string(),atom() | nonempty_string() | non_neg_integer()} | {'missing_chunk',string(),atom() | nonempty_string() | non_neg_integer()} | {'unknown_chunk',string(),atom() | nonempty_string() | non_neg_integer()} | {'chunk_too_big',string(),nonempty_string(),non_neg_integer(),non_neg_integer()}}.
-get_abstract_code(Module, Beam) ->
-    case beam_lib:chunks(Beam, [abstract_code]) of
-        {ok, {Module, [{abstract_code, AbstractCode}]}} ->
-            AbstractCode;
-        {error, beam_lib, {key_missing_or_invalid, _, _}} ->
-            encrypted_abstract_code;
-        Error -> Error
-    end.
 
 %% @spec get_compile_info(atom(),binary() | string()) -> 'no_abstract_code' | binary() | [{atom() | integer(),_} | {atom(),atom() | byte(),integer()} | {non_neg_integer(),atom() | tuple(),atom(),byte()}] | {atom(),[any()]}.
 get_compile_info(Module, Beam) ->
