@@ -26,13 +26,18 @@
          now_str/0,
          get_sub_dirs/1,
          appup_plugin_appinfo/1,
-         tmp_filename/0,
-         find_app_info/2]).
+         find_app_info/2,
+         load_module_from_beam/2,
+         unload_module_from_beam/2,
+         beam_rel_path/2, beam_rel_path/4,
+         tmp_filename/0]).
 
 %% Helper function for checking values and aborting when needed
+%% @spec prop_check(boolean(),_,_) -> any().
 prop_check(true, _, _) -> true;
 prop_check(false, Msg, Args) -> rebar_api:abort(Msg, Args).
 
+%% @spec make_proplist([tuple()],_) -> any().
 make_proplist([{_,_}=H|T], Acc) ->
     make_proplist(T, [H|Acc]);
 make_proplist([H|T], Acc) ->
@@ -42,6 +47,7 @@ make_proplist([H|T], Acc) ->
 make_proplist([], Acc) ->
     Acc.
 
+%% @spec find_files(atom() | [atom() | [any()] | char()],string(),boolean()) -> any().
 find_files(Dir, Regex, Recursive) ->
     filelib:fold_files(Dir, Regex, Recursive,
                        fun(F, Acc) -> [F | Acc] end, []).
@@ -53,9 +59,11 @@ find_files(Dir, Regex, Recursive) ->
 %% The Ext is really a regexp, with any leading dot implicitly
 %% escaped, and anchored at the end of the string.
 %%
+%% @spec find_files_by_ext(atom() | [atom() | [any()] | char()],string()) -> any().
 find_files_by_ext(Dir, Ext) ->
     find_files_by_ext(Dir, Ext, true).
 
+%% @spec find_files_by_ext(atom() | [atom() | [any()] | char()],string(),boolean()) -> any().
 find_files_by_ext(Dir, Ext, Recursive) ->
     %% Convert simple extension to proper regex
     EscapeDot = case Ext of
@@ -68,11 +76,13 @@ find_files_by_ext(Dir, Ext, Recursive) ->
     ExtRe = "^[^._].*" ++ EscapeDot ++ Ext ++ [$$],
     find_files(Dir, ExtRe, Recursive).
 
+%% @spec now_str() -> [any()].
 now_str() ->
     {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:local_time(),
     lists:flatten(io_lib:format("~4b/~2..0b/~2..0b ~2..0b:~2..0b:~2..0b",
                                 [Year, Month, Day, Hour, Minute, Second])).
 
+%% @spec get_sub_dirs(atom() | binary() | [atom() | [any()] | char()]) -> [any()].
 get_sub_dirs(Dir) ->
     lists:filtermap(fun(SubDir) ->
                         case filelib:is_dir(SubDir) of
@@ -81,9 +91,11 @@ get_sub_dirs(Dir) ->
                         end
                     end, filelib:wildcard(filename:join(Dir, "*"))).
 
+%% @spec appup_plugin_appinfo(maybe_improper_list()) -> any().
 appup_plugin_appinfo(Apps) ->
     appup_plugin_appinfo(Apps, undefined).
 
+%% @spec appup_plugin_appinfo(maybe_improper_list(),_) -> any().
 appup_plugin_appinfo([], AppInfo) -> AppInfo;
 appup_plugin_appinfo([AppInfo | Rest], _) ->
     case rebar_app_info:name(AppInfo) of
@@ -93,16 +105,43 @@ appup_plugin_appinfo([AppInfo | Rest], _) ->
             appup_plugin_appinfo(Rest, undefined)
     end.
 
+
 tmp_filename() ->
      lists:flatten(io_lib:format("tmp.appup.~p", [erlang:phash2(make_ref())])).
 
+%% @spec find_app_info(_,_) -> any().
 find_app_info(Name, State) ->
     Apps = rebar_state:project_apps(State),
     find_app_info1(Name, Apps).
 
+%% @spec find_app_info1(_,maybe_improper_list()) -> any().
 find_app_info1(_Name, []) -> undefined;
 find_app_info1(Name, [App | Apps]) ->
     case rebar_app_info:name(App) =:= Name of
         true -> App;
         false -> find_app_info1(Name, Apps)
     end.
+
+%% @spec load_module_from_beam(atom() | binary() | [atom() | [any()] | char()],atom()) -> {'module',atom()}.
+load_module_from_beam(Beam, Module) ->
+    true = code:add_path(filename:dirname(Beam)),
+    {module, Module} = code:load_file(Module).
+
+%% @spec unload_module_from_beam(atom() | binary() | [atom() | [any()] | char()],atom()) -> 'ok'.
+unload_module_from_beam(Beam, Module) ->
+    code:del_path(filename:dirname(Beam)),
+    code:delete(Module),
+    code:purge(Module),
+    ok.
+
+%% @spec beam_rel_path([atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],[atom() | [any()] | char()]) -> binary() | string().
+beam_rel_path(App, RelDir, Version, Module) ->
+    filename:join([RelDir, App, "lib",
+                   App ++ "-" ++ Version,
+                   "ebin",
+                   Module ++ ".beam"]).
+
+%% @spec beam_rel_path(atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()]) -> binary() | string().
+beam_rel_path(EbinDir, Module) ->
+    filename:join([EbinDir,
+                   Module ++ ".beam"]).

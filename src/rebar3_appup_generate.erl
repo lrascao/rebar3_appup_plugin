@@ -38,6 +38,7 @@
 %% Public API
 %% ===================================================================
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
+%% @spec init(rebar_state:t()) -> {'ok',rebar_state:t()}.
 init(State) ->
     Provider = providers:create([
             {name, ?PROVIDER},            % The 'user friendly' name of the task
@@ -63,6 +64,7 @@ init(State) ->
     {ok, rebar_state:add_provider(State, Provider)}.
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
+%% @spec do(rebar_state:t()) -> {'ok',rebar_state:t()} | {'error',string()}.
 do(State) ->
     {Opts, _} = rebar_state:command_parsed_args(State),
     rebar_api:debug("opts: ~p~n", [Opts]),
@@ -157,12 +159,14 @@ do(State) ->
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().
+%% @spec format_error(any()) -> iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
 %% ===================================================================
 %% Private API
 %% ===================================================================
+%% @spec parse_purge_opts(maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | char(),binary() | [])) -> [[] | {atom(),{_,_}}].
 parse_purge_opts(Opts0) when is_list(Opts0) ->
     Opts1 = re:split(Opts0, ";"),
     lists:map(fun(Opt) ->
@@ -181,9 +185,11 @@ parse_purge_opts(Opts0) when is_list(Opts0) ->
                 end
               end, Opts1).
 
+%% @spec purge_opt(<<_:32,_:_*16>>) -> 'brutal_purge' | 'soft_purge'.
 purge_opt(<<"soft">>) -> soft_purge;
 purge_opt(<<"brutal">>) -> brutal_purge.
 
+%% @spec get_purge_opts(atom() | tuple(),[any()]) -> {_,_}.
 get_purge_opts(Name, Opts) ->
     {DefaultPrePurge, DefaultPostPurge} = proplists:get_value(default, Opts,
                                                             {?DEFAULT_PRE_PURGE,
@@ -192,6 +198,7 @@ get_purge_opts(Name, Opts) ->
                                                 {DefaultPrePurge, DefaultPostPurge}),
     {PrePurge, PostPurge}.
 
+%% @spec deduce_previous_version(string(),_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()]) -> any().
 deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) ->
     Versions = rebar3_appup_rel_utils:get_release_versions(Name, PreviousRelPath),
     case length(Versions) of
@@ -212,6 +219,7 @@ deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) -
                             [PreviousRelPath, Versions])
     end.
 
+%% @spec get_apps(string(),atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()]) -> [any()].
 get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
     OldApps = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
     rebar_api:debug("previous version apps: ~p~n", [OldApps]),
@@ -244,20 +252,24 @@ get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
     rebar_api:debug("upgraded: ~p", [Upgraded]),
     Upgraded.
 
+%% @spec app_list_diff([any()],[any()]) -> [any()].
 app_list_diff(List1, List2) ->
     List3 = lists:umerge(lists:sort(proplists:get_keys(List1)),
                          lists:sort(proplists:get_keys(List2))),
     List3 -- proplists:get_keys(List2).
 
+%% @spec file_to_name(atom() | binary() | [atom() | [any()] | char()]) -> binary() | string().
 file_to_name(File) ->
     filename:rootname(filename:basename(File)).
 
+%% @spec gen_appup_which_apps([any()],[string()]) -> [any()].
 gen_appup_which_apps(UpgradedApps, [First|Rest]) ->
     List = proplists:delete(list_to_atom(First), UpgradedApps),
     gen_appup_which_apps(List, Rest);
 gen_appup_which_apps(Apps, []) ->
     Apps.
 
+%% @spec generate_appup_files(_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],{'upgrade',_,{'undefined' | [any()],_}},[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
@@ -294,6 +306,7 @@ generate_appup_files(TargetDir,
                      Opts, State),
     ok.
 
+%% @spec module_dependencies([string() | {[any()],[any()]}]) -> [{atom(),[any()]}].
 module_dependencies(Files) ->
     %% build a unique list of directories holding the supplied files
     Dirs0 = lists:map(fun({File, _}) ->
@@ -311,6 +324,7 @@ module_dependencies(Files) ->
     Mods = [list_to_atom(file_to_name(F)) || {F, _} <- Files],
     module_dependencies(Mods, Mods, []).
 
+%% @spec module_dependencies([atom()],[atom()],[{atom(),[any()]}]) -> [{atom(),[any()]}].
 module_dependencies([], _Mods, Acc) ->
     xref:stop(xref),
     Acc;
@@ -324,6 +338,7 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
     Deps = sets:to_list(sets:intersection(Set0, Set1)),
     module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
 
+%% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 write_appup(App, OldVer, NewVer, TargetDir,
             UpgradeInstructions, DowngradeInstructions,
             Opts, State) ->
@@ -367,6 +382,7 @@ write_appup(App, OldVer, NewVer, TargetDir,
                   end, AppUpFiles),
     ok.
 
+%% @spec generate_instruction('add_module' | 'delete_module' | 'upgrade',[{atom(),[any()]}],atom() | binary() | [atom() | [any()] | char()] | {atom() | binary() | string() | tuple(),_},[{'plugin_dir',_} | {'purge_opts',[any()]},...]) -> {'delete_module',atom()} | {'add_module',atom(),_} | {'update',atom() | tuple(),'supervisor'} | {'load_module',atom() | tuple(),_,_,_} | {'update',atom() | tuple(),{'advanced',[]},_,_,_}.
 generate_instruction(add_module, ModDeps, File, _Opts) ->
     Name = list_to_atom(file_to_name(File)),
     Deps = proplists:get_value(Name, ModDeps, []),
@@ -390,6 +406,7 @@ generate_instruction(upgrade, ModDeps, {File, _}, Opts) ->
     Deps = proplists:get_value(Name, ModDeps, []),
     generate_instruction_advanced(Name, Behavior, CodeChange, Deps, Opts).
 
+%% @spec generate_instruction_advanced(atom() | tuple(),_,'code_change' | 'undefined',_,[{'plugin_dir',_} | {'purge_opts',[any()]},...]) -> {'update',atom() | tuple(),'supervisor'} | {'load_module',atom() | tuple(),_,_,_} | {'update',atom() | tuple(),{'advanced',[]},_,_,_}.
 generate_instruction_advanced(Name, undefined, undefined, Deps, Opts) ->
     PurgeOpts = proplists:get_value(purge_opts, Opts, []),
     {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
@@ -428,6 +445,8 @@ invert_instruction({update, Name, supervisor}) ->
 invert_instruction({update, Name, {advanced, []}, PrePurge, PostPurge, Deps}) ->
     {update, Name, {advanced, []}, PrePurge, PostPurge, Deps}.
 
+
+%% @spec get_behavior([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> any().
 get_behavior(List) ->
     Attributes = proplists:get_value(attributes, List),
     case proplists:get_value(behavior, Attributes) of
@@ -435,6 +454,7 @@ get_behavior(List) ->
         Else -> Else
     end.
 
+%% @spec is_code_change([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> 'code_change' | 'undefined'.
 is_code_change(List) ->
     Exports = proplists:get_value(exports, List),
     case proplists:is_defined(code_change, Exports) orelse
