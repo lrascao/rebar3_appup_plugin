@@ -324,7 +324,10 @@ brutal_purge_test(Config) when is_list(Config) ->
                             {ok, "ok"} = sh("./bin/relapp eval "
                                             "\"relapp_m1:store_fun().\"",
                                             [], DeployDir),
-                            State
+                            {ok, Srv2Pid} = sh("./bin/relapp eval "
+                                               "\"whereis(relapp_srv2).\"",
+                                            [], DeployDir),
+                            State ++ [{srv2_pid, Srv2Pid}]
                       end,
     CheckUpgradeFun = fun(DeployDir, State) ->
                         %% the upgrade will succeed, however will be killed due to it
@@ -332,19 +335,54 @@ brutal_purge_test(Config) when is_list(Config) ->
                         %% since this is a brutal purge, the gen server will get killed
                         %% and cause the application to stop due to reached maximum supervisor
                         %% intensity
-                        %% wait a bit
-                        timer:sleep(4000),
-                        %% then ensure it actually died
-                        true = ({ok, "pong"} =/= sh("./bin/relapp ping ", [], DeployDir)),
-                        %% restart it
-                        {ok, _} = sh("./bin/relapp start ", [], DeployDir),
-                        %% wait for it to start
-                        ok = wait_for_node_start(DeployDir),
+                        %% unless, of course, this is already OTP19.1 in which this
+                        %% bug was fixed and the VM is no longer killed because of this
+                        case is_brutal_purge_fixed() of
+                          true ->
+                            %% ensure that it's still running
+                            true = ({ok, "pong"} =:= sh("./bin/relapp ping ", [], DeployDir));
+                          false ->
+                            %% wait a bit
+                            timer:sleep(4000),
+                            %% ensure it actually died
+                            true = ({ok, "pong"} =/= sh("./bin/relapp ping ", [], DeployDir)),
+                            %% restart it
+                            {ok, _} = sh("./bin/relapp start ", [], DeployDir),
+                            %% wait for it to start
+                            ok = wait_for_node_start(DeployDir)
+                        end,
                         State
+                      end,
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, NewSrv2Pid} = sh("./bin/relapp eval "
+                                                  "\"whereis(relapp_srv2).\"",
+                                                  [], DeployDir),
+                            case is_brutal_purge_fixed() of
+                              true ->
+                                true = (NewSrv2Pid =:= proplists:get_value(srv2_pid, State)),
+                                %% we now make the call, this will cause the worker to crash
+                                %% the supervisor intensity will be reached and the whole VM will
+                                %% also crash
+                                {ok, "ok"} =
+                                      sh("./bin/relapp eval "
+                                         "\"relapp_srv2:call_stored_fun().\"",
+                                         [], DeployDir),
+                                %% wait a bit
+                                timer:sleep(4000),
+                                %% ensure it actually died
+                                true = ({ok, "pong"} =/= sh("./bin/relapp ping ", [], DeployDir)),
+                                %% restart it
+                                {ok, _} = sh("./bin/relapp start ", [], DeployDir),
+                                %% wait for it to start
+                                ok = wait_for_node_start(DeployDir);
+                              false -> ok
+                            end,
+                            State
                       end,
     ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
                            [{before_upgrade, BeforeUpgradeFun},
-                            {check_upgrade, CheckUpgradeFun}],
+                            {check_upgrade, CheckUpgradeFun},
+                            {after_upgrade, AfterUpgradeFun}],
                            {[{load_module, relapp_m1, brutal_purge, brutal_purge, []}],
                             [{load_module, relapp_m1, brutal_purge, brutal_purge, []}]},
                            [{generate_opts, "--purge \"relapp_m1=brutal\""}],
@@ -373,19 +411,42 @@ soft_purge_test(Config) when is_list(Config) ->
                             {ok, NewSrv2Pid} = sh("./bin/relapp eval "
                                                   "\"whereis(relapp_srv2).\"",
                                                   [], DeployDir),
-                            true = (NewSrv2Pid =:= proplists:get_value(srv2_pid, State)),
-                            {ok, "ok"} =
-                                  sh("./bin/relapp eval "
-                                     "\"relapp_srv2:call_stored_fun().\"",
-                                     [], DeployDir),
+                            case is_brutal_purge_fixed() of
+                              true ->
+                                %% we now make the call, this will cause the worker to crash
+                                %% the supervisor intensity will be reached and the whole VM will
+                                %% also crash
+                                {ok, "ok"} =
+                                      sh("./bin/relapp eval "
+                                         "\"relapp_srv2:call_stored_fun().\"",
+                                         [], DeployDir),
+                                %% wait a bit
+                                timer:sleep(4000),
+                                %% ensure it actually died
+                                true = ({ok, "pong"} =/= sh("./bin/relapp ping ", [], DeployDir)),
+                                %% restart it
+                                {ok, _} = sh("./bin/relapp start ", [], DeployDir),
+                                %% wait for it to start
+                                ok = wait_for_node_start(DeployDir);
+                              false ->
+                                true = (NewSrv2Pid =:= proplists:get_value(srv2_pid, State)),
+                                {ok, "ok"} =
+                                      sh("./bin/relapp eval "
+                                         "\"relapp_srv2:call_stored_fun().\"",
+                                         [], DeployDir)
+                            end,
                             State
                       end,
     CheckDowngradeFun = fun(_DeployDir, State) ->
                         DowngradeResult = proplists:get_value(downgrade_result, State),
-                        %% since this is a soft purge we expect an error from the release
-                        %% handler
-                        % ERROR: unable to install '1.0.15' - old processes still running code from module relapp_m1
-                        true = ({error,3} =:= DowngradeResult),
+                        case is_brutal_purge_fixed() of
+                          true -> ok;
+                          false ->
+                            %% since this is a soft purge we expect an error from the release
+                            %% handler
+                            % ERROR: unable to install '1.0.15' - old processes still running code from module relapp_m1
+                            true = ({error,3} =:= DowngradeResult)
+                        end,
                         State
                       end,
     ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
@@ -686,3 +747,9 @@ sh_loop(Port, Acc) ->
         {Port, {exit_status, Rc}} ->
             {error, Rc}
     end.
+
+-ifdef(brutal_purge_fixed).
+is_brutal_purge_fixed() -> true.
+-else.
+is_brutal_purge_fixed() -> false.
+-endif.
