@@ -45,7 +45,8 @@ groups() ->
          new_simple_module, simple_module_use,
          brutal_purge_test, soft_purge_test,
          appup_src_scripting,
-         appup_src_extra_argument]
+         appup_src_extra_argument,
+         appup_src_template_vars]
      }].
 
 init_per_suite(Config) ->
@@ -513,6 +514,48 @@ appup_src_extra_argument(Config) when is_list(Config) ->
                            Config),
     ok.
 
+appup_src_template_vars(doc) -> [""];
+appup_src_template_vars(suite) -> [];
+appup_src_template_vars(Config) when is_list(Config) ->
+    BeforeUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Srv2Pid} = sh("./bin/relapp eval "
+                                               "\"whereis(relapp_srv2).\"",
+                                            [], DeployDir),
+                            State ++ [{srv2_pid, Srv2Pid}]
+                       end,
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, NewSrv2Pid} = sh("./bin/relapp eval "
+                                                  "\"whereis(relapp_srv2).\"",
+                                                 [], DeployDir),
+                            true = (NewSrv2Pid =/= proplists:get_value(srv2_pid, State)),
+                            State
+                      end,
+    BeforeDowngradeFun = fun(DeployDir, State) ->
+                            {ok, Srv2Pid} = sh("./bin/relapp eval "
+                                               "\"whereis(relapp_srv2).\"",
+                                            [], DeployDir),
+                            State ++ [{srv2_pid, Srv2Pid}]
+                       end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, NewSrv2Pid} = sh("./bin/relapp eval "
+                                                  "\"whereis(relapp_srv2).\"",
+                                                 [], DeployDir),
+                            true = (NewSrv2Pid =/= proplists:get_value(srv2_pid, State)),
+                            State
+                      end,
+    ok = upgrade_downgrade("relapp1", "1.0.21", "1.0.22",
+                           [{before_upgrade, BeforeUpgradeFun},
+                            {after_upgrade, AfterUpgradeFun},
+                            {before_downgrade, BeforeDowngradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                              [{restart_application, relapp}],
+                              [{restart_application, relapp}]
+                           },
+                           [{generate_appup, false}],
+                           Config),
+    ok.
+
 %% -------------------------------------------------------------
 %% Private methods
 %% -------------------------------------------------------------
@@ -663,22 +706,25 @@ check_appup(RelDir, AppName, FromVersion, ToVersion) ->
     %% the .appup is generated to two locations:
     %% _build/default/lib/relapp/ebin/relapp.appup
     %% _build/default/rel/relapp/lib/relapp-1.0.1/ebin/relapp.appup
-    log("checking appup on ~p from ~p to ~p\n",
-        [RelDir, FromVersion, ToVersion]),
     {ok, EbinAppup} = file:consult(filename:join([RelDir,
                                             "_build/default/lib",
                                             AppName, "ebin",
                                             AppName ++ ".appup"])),
+    log("checking appup on ~p from ~p to ~p (~p)\n",
+        [RelDir, FromVersion, ToVersion, EbinAppup]),
     case lists:keysearch(ToVersion, 1, EbinAppup) of
         {value, {ToVersion, UpFromVsn, DownToVsn}} ->
             %% ensure that the version to upgrade from is contained in
             % both structures, upgrade and downgrade
-            UpgradeInstructions = proplists:get_value(FromVersion, UpFromVsn, undefined),
+            UpgradeInstructions = get_version_appup_instructions(FromVersion, UpFromVsn),
             true = UpgradeInstructions =/= undefined,
-            DowngradeInstructions = proplists:get_value(FromVersion, DownToVsn, undefined),
+            DowngradeInstructions = get_version_appup_instructions(FromVersion, DownToVsn),
             true = DowngradeInstructions =/= undefined,
             {UpgradeInstructions, DowngradeInstructions};
-        _ -> {undefined, undefined}
+        _ ->
+          log("unable to find version ~p in appup ~p",
+              [ToVersion, EbinAppup]),
+          {undefined, undefined}
     end.
 
 log(Format, Args) ->
@@ -753,3 +799,13 @@ is_brutal_purge_fixed() -> true.
 -else.
 is_brutal_purge_fixed() -> false.
 -endif.
+
+get_version_appup_instructions(Vsn, Instructions) ->
+  lists:flatten(
+    lists:filtermap(fun({V, Is}) ->
+                      case re:run(Vsn, V, [unicode,{capture,first,list}]) of
+                        {match,[Vsn]} ->
+                          {true, Is};
+                        _ -> false
+                      end
+                    end, Instructions)).
