@@ -53,19 +53,30 @@ do(State) ->
                 [AppInfo]
            end,
     lists:foreach(fun(AppInfo) ->
-                    Opts = rebar_app_info:opts(AppInfo),
-                    Source = appup_file_src(AppInfo),
-                    case filelib:is_file(Source) of
+                    Source0 = appup_file_src(AppInfo),
+                    case filelib:is_file(Source0) of
                         true ->
                             rebar_api:info("Compiling ~s",
-                                [filename:basename(Source)]),
+                                [filename:basename(Source0)]),
                             Target = appup_file_target(AppInfo),
-                            case evaluate(Source) of
-                                {ok, AppupTerm} ->
-                                    compile(AppupTerm, Target, Opts);
+                            case template(Source0, AppInfo) of
+                                {ok, AppUpBin} ->
+                                    %% allocate a temporary file and write the templated
+                                    %% contents to it
+                                    AppUpFile = rebar3_appup_utils:tmp_filename(),
+                                    ok = file:write_file(AppUpFile, AppUpBin),
+                                    case evaluate(AppUpFile) of
+                                        {ok, AppupTerm} ->
+                                            compile(AppupTerm, Target);
+                                        {error, Reason} ->
+                                            rebar_api:abort("failed to evaluate ~s (template ~p): ~p",
+                                                [AppUpFile, Source0, Reason])
+                                    end,
+                                    %% leave no trash behind
+                                    ok = file:delete(AppUpFile);
                                 {error, Reason} ->
-                                    rebar_api:abort("failed to compile ~p: ~p",
-                                        [Source, Reason])
+                                    rebar_api:abort("unable to render template due to ~p",
+                                        [Reason])
                             end;
                         false -> ok
                     end
@@ -89,10 +100,17 @@ bs(Vars) ->
 evaluate(Source) ->
     file:script(Source, bs([])).
 
-compile(AppupTerm, Target, _Opts) ->
-    %% Perform basic validation on the appup file
-    %% i.e. if a consult succeeds and basic appup
-    %% structure exists.
+template(Source, AppInfo) ->
+    Context = [{"vsn", rebar_app_info:original_vsn(AppInfo)}],
+    {ok, Template} = file:read_file(Source),
+    case catch bbmustache:render(Template, Context) of
+        B when is_binary(B) -> {ok, B};
+        Error -> {error, Error}
+    end.
+
+compile(AppupTerm, Target) ->
+    %% Perform basic validation on the appup term
+    %% i.e. if basic appup structure exists.
     case AppupTerm of
         %% The .appup syntax is described in
         %% http://erlang.org/doc/man/appup.html.

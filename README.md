@@ -3,6 +3,7 @@ rebar3 appup plugin
 
 [![Build Status](https://travis-ci.org/lrascao/rebar3_appup_plugin.svg?branch=develop)](https://travis-ci.org/lrascao/rebar3_appup_plugin)
 [![hex.pm version](https://img.shields.io/hexpm/v/rebar3_appup_plugin.svg)](https://hex.pm/packages/rebar3_appup_plugin)
+[![gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/rebar3-appup-plugin/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
 
 A rebar3 plugin for handling `.appup` files. Contains the instructions necessary to upgrade from one release to another. Supports the following features:
    * Automatic generation of the `.appup` file containing instructions necessary to upgrade and downgrade from one release to the other. [More info](doc/UPGRADE_DOWNGRADE.md)

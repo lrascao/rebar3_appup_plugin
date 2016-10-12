@@ -25,7 +25,8 @@
          find_files_by_ext/2, find_files_by_ext/3,
          now_str/0,
          get_sub_dirs/1,
-         appup_plugin_appinfo/1]).
+         appup_plugin_appinfo/1,
+         tmp_filename/0]).
 
 %% Helper function for checking values and aborting when needed
 prop_check(true, _, _) -> true;
@@ -90,3 +91,6 @@ appup_plugin_appinfo([AppInfo | Rest], _) ->
         _ ->
             appup_plugin_appinfo(Rest, undefined)
     end.
+
+tmp_filename() ->
+     lists:flatten(io_lib:format("tmp.appup.~p", [erlang:phash2(make_ref())])).

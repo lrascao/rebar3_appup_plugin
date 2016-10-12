@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Title</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+class: center, middle
+
+# Friendlier relups
+
+---
+
+# Who
+
+    * Luis Rascão, Software Developer @ Miniclip
+    * Miniclip is a games company mainly focused on mobile:
+      8 Ball Pool, Agar.IO, Soccer Stars
+    * We use a lot of Erlang, we love it
+
+![Image](https://raw.githubusercontent.com/lrascao/rebar3_appup_plugin/feature/euc_2016_lightning_talk/doc/euc-2016/img/miniclip.jpg)
+
+---
+
+# rebar3 relup plugins
+
+    * There are few, rebar3_appup_plugin is one of them, it tries to automate some of the
+      boring stuff that scares people away from doing more relups
+    * What does it do?
+      * Generates the appup
+      * Validates a .appup.src file
+      * Converts state records for gen_server/fsm
+
+---
+
+# appup generation
+
+    * generate two releases
+        * the one that is live right now
+          * git checkout 1.0.0
+          * rebar3 release
+        * the other one that you want to upgrade to
+          * git checkout 2.0.0
+          * rebar3 release
+    * rebar3 appup generate
+        * it finds the differences in beam code for both releases and generates the apropriate
+          appup instructions (for upgrade and downgrade)
+    * rebar3 relup
+    * rebar3 tar
+    * TEST THE UPGRADE!!!
+    * apply the upgrade in live
+
+---
+
+# automatically generated module dependencies
+
+    * before loading a module it's dependencies should be loaded first
+    * OTP takes care of that for us, all we need is to supply it with a list of dependencies
+      for each module
+    * xref is really good at building that list
+
+---
+
+# .appup.src validation and evaluation
+
+    * when you want to customize your appup file
+        * remember the Extra argument in code_change/3?
+        * add more appup instructions
+    * look for .appup.src files, evaluate and copy them to the output (a lot like .app.src)
+
+---
+
+# state record conversion
+
+    * a lot of us use records to store gen_* processes's state
+    * it's a pain, since records are tuples you can either convert them manually,
+      maybe use exprecs (http://github.com/ulf/parse_trans)
+    * the plugin, if properly instructed, will inject the necessary code into the target .beam
+      that takes care of this for you
+    * it's able to do this since it knows both record structures (the previous and the new one)
+    * all it needs from you is to tell it where is the record that contains the process state
+
+![Image](http://cdn-img.health.com/sites/default/files/styles/400x400/public/styles/main/public/vaccine-baby-cry-400x400.jpg)
+
+---
+
+# final
+
+    * TEST YOUR UPGRADES! (under load)
+    * Have module m1 send a message to process p1, the message is an anonymous function.
+    * do a load module on m1, p1 will crash
+    * because brutal_purge
+
+---
+
+# links
+
+    * Feedback, issues, pull requests, dank memes
+    * https://github.com/lrascao/rebar3_appup_plugin
+    * http://lrascao.github.io/automatic-release-upgrades-in-erlang/
+    * luis.rascao@gmail.com
+
+    </textarea>
+    <script src="js/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>
