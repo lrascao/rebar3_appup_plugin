@@ -7,7 +7,7 @@ rebar3 appup plugin
 
 A rebar3 plugin for handling `.appup` files. Contains the instructions necessary to upgrade from one release to another. Supports the following features:
    * Automatic generation of the `.appup` file containing instructions necessary to upgrade and downgrade from one release to the other. [More info](doc/UPGRADE_DOWNGRADE.md)
-   * Validation of any `.appup.src` files that might be present, these are scripts that can contain Erlang code. They are evaluated, their results and written to and `.appup` file that is then moved to the target dir. [More info](doc/APPUP_SRC.md)
+   * Validation of any `.appup.src` files that might be present, these are scripts that can contain Erlang code. They are templated, evaluated and their results and written to an `.appup` file that is then moved to the target dir. [More info](doc/APPUP_SRC.md)
    * Automatic code injection for `gen_server` state record conversion between versions. [More info](doc/STATE_RECORD_CONVERSION.md)
    * Automatically generated module dependencies. [More info](doc/MODULE_DEPENDENCIES.md)
 
@@ -41,7 +41,7 @@ By generating two releases, the one that is live right now and the one that we w
 Using an .appup.src file
 ---
 
-You can generate the `.appup` file every time you pack a release with the `rebar3 appup generate` call. However when there is the need to add custom data or instructions to the `.appup` it's useful to have it in source control alongside your `.app.src` file. The `.appup.src` file can contain Erlang code and it's result should be a [valid appup Erlang term](http://erlang.org/doc/man/appup.html). The plugin will look for any files ending in `.appup.src`, evaluate them and have their results written to an `.appup` file that will then be used to generate the relup. [More info](doc/APPUP_SRC.md).
+You can generate the `.appup` file every time you pack a release with the `rebar3 appup generate` call. However when there is the need to add custom data or instructions to the `.appup` it's useful to have it in source control alongside your `.app.src` file. The `.appup.src` file can contain Erlang code and it's result should be a [valid appup Erlang term](http://erlang.org/doc/man/appup.html). The plugin will look for any files ending in `.appup.src`, perform template variables substitution, evaluate them and have their results written to an `.appup` file that will then be used to generate the relup. [More info](doc/APPUP_SRC.md).
 
 Code Injection
 ---

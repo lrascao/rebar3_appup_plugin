@@ -32,3 +32,21 @@ UpFrom = DownTo = V,
 ```
 
 Note that we are able to access methods in our codebase (ie. the `relapp_m1` module).
+
+## Templated .appup.src
+
+Before being evaluated there is a template variable substitution phase using [mustache templates](https://github.com/soranoba/bbmustache), the following variables are available:
+   * `vsn` - the current release version
+
+Here is an example of this in practice in the [relapp test release](https://github.com/lrascao/relapp1/commit/423c284b):
+
+```
+{"{{vsn}}",
+    [
+     {<<".*">>, [{restart_application, relapp}]}
+    ],
+    [
+     {<<".*">>, [{restart_application, relapp}]}
+    ]
+}.
+```
