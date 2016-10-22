@@ -26,7 +26,8 @@
          now_str/0,
          get_sub_dirs/1,
          appup_plugin_appinfo/1,
-         tmp_filename/0]).
+         tmp_filename/0,
+         find_app_info/2]).
 
 %% Helper function for checking values and aborting when needed
 prop_check(true, _, _) -> true;
@@ -94,3 +95,14 @@ appup_plugin_appinfo([AppInfo | Rest], _) ->
 
 tmp_filename() ->
      lists:flatten(io_lib:format("tmp.appup.~p", [erlang:phash2(make_ref())])).
+
+find_app_info(Name, State) ->
+    Apps = rebar_state:project_apps(State),
+    find_app_info1(Name, Apps).
+
+find_app_info1(_Name, []) -> undefined;
+find_app_info1(Name, [App | Apps]) ->
+    case rebar_app_info:name(App) =:= Name of
+        true -> App;
+        false -> find_app_info1(Name, Apps)
+    end.

@@ -46,7 +46,8 @@ groups() ->
          brutal_purge_test, soft_purge_test,
          appup_src_scripting,
          appup_src_extra_argument,
-         appup_src_template_vars]
+         appup_src_template_vars,
+         appup_src_state_var_scripting]
      }].
 
 init_per_suite(Config) ->
@@ -555,6 +556,19 @@ appup_src_template_vars(Config) when is_list(Config) ->
                            [{generate_appup, false}],
                            Config),
     ok.
+
+appup_src_state_var_scripting(doc) -> [""];
+appup_src_state_var_scripting(suite) -> [];
+appup_src_state_var_scripting(Config) when is_list(Config) ->
+    ok = upgrade_downgrade("relapp1", "1.0.22", "1.0.23",
+                           [],
+                           {
+                            [{restart_application, relapp}],
+                            [{restart_application, relapp}]
+                           },
+                           [{generate_appup, false}], Config),
+    ok.
+
 
 %% -------------------------------------------------------------
 %% Private methods

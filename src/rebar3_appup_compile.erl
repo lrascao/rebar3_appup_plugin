@@ -65,7 +65,7 @@ do(State) ->
                                     %% contents to it
                                     AppUpFile = rebar3_appup_utils:tmp_filename(),
                                     ok = file:write_file(AppUpFile, AppUpBin),
-                                    case evaluate(AppUpFile) of
+                                    case evaluate(AppUpFile, State) of
                                         {ok, AppupTerm} ->
                                             compile(AppupTerm, Target);
                                         {error, Reason} ->
@@ -97,8 +97,8 @@ bs(Vars) ->
                         erl_eval:add_binding(K, V, Bs)
                 end, erl_eval:new_bindings(), Vars).
 
-evaluate(Source) ->
-    file:script(Source, bs([])).
+evaluate(Source, State) ->
+    file:script(Source, bs([{'STATE', State}])).
 
 template(Source, AppInfo) ->
     Context = [{"vsn", rebar_app_info:original_vsn(AppInfo)}],
