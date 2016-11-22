@@ -168,12 +168,13 @@ parse_purge_opts(Opts0) when is_list(Opts0) ->
     lists:map(fun(Opt) ->
                 case re:split(Opt, "=") of
                     [Module, PrePostPurge] ->
-                        case re:split(PrePostPurge, "/") of
-                            [PrePurge, PostPurge] -> ok;
-                            [PrePostPurge] ->
-                                PrePurge = PrePostPurge,
-                                PostPurge = PrePostPurge
-                        end,
+                        {PrePurge, PostPurge} =
+                            case re:split(PrePostPurge, "/") of
+                                [PrePurge0, PostPurge0] ->
+                                    {PrePurge0, PostPurge0};
+                                [PrePostPurge] ->
+                                    {PrePostPurge, PrePostPurge}
+                            end,
                         {list_to_atom(binary_to_list(Module)),
                           {purge_opt(PrePurge), purge_opt(PostPurge)}};
                     _ -> []
@@ -376,12 +377,12 @@ generate_instruction(delete_module, ModDeps, File, _Opts) ->
     % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
     % {delete_module, Name, Deps};
     {delete_module, Name};
-generate_instruction(added_application, Application, _, _Opts) ->
-    {add_application, Application, permanent};
-generate_instruction(removed_application, Application, _, _Opts) ->
-    {remove_application, Application};
-generate_instruction(restarted_application, Application, _, _Opts) ->
-    {restart_application, Application};
+%generate_instruction(added_application, Application, _, _Opts) ->
+%    {add_application, Application, permanent};
+%generate_instruction(removed_application, Application, _, _Opts) ->
+%    {remove_application, Application};
+%generate_instruction(restarted_application, Application, _, _Opts) ->
+%    {restart_application, Application};
 generate_instruction(upgrade, ModDeps, {File, _}, Opts) ->
     {ok, {Name, List}} = beam_lib:chunks(File, [attributes, exports]),
     Behavior = get_behavior(List),
