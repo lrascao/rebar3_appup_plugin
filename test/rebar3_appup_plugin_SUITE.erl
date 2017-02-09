@@ -188,22 +188,42 @@ new_dependency_appup(doc) -> ["Generate an appup for an application that involve
                               "adding a new dependency"];
 new_dependency_appup(suite) -> [];
 new_dependency_appup(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "3.0.0"} = get_app_version("parse_trans", DeployDir),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            false = is_app_running("parse_trans", DeployDir),
+                            State
+                        end,
     ok = upgrade_downgrade("relapp1", "1.0.7", "1.0.8",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
                            {[], []},
-                           Config),
+                           [], Config),
     ok.
 
 remove_dependency_appup(doc) -> ["Generate an appup for an application that involves "
                                  "removings an existing dependency"];
 remove_dependency_appup(suite) -> [];
 remove_dependency_appup(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            false = is_app_running("parse_trans", DeployDir),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, "3.0.0"} = get_app_version("parse_trans", DeployDir),
+                            State
+                        end,
     ok = upgrade_downgrade("relapp1", "1.0.8", "1.0.9",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
                            {[], []},
-                           Config),
+                           [], Config),
     ok.
 
 restore_dependency_appup(doc) -> ["Generate an appup for an application that involves "
-                                  "restores back a dependency that was removed"];
+                                  "restoring back a dependency that was removed"];
 restore_dependency_appup(suite) -> [];
 restore_dependency_appup(Config) when is_list(Config) ->
     ok = upgrade_downgrade("relapp1", "1.0.9", "1.0.10",
@@ -797,16 +817,31 @@ wait_for_node_stop(DeployDir) ->
         _ -> ok
     end.
 
-get_running_version(DeployDir) ->
-    case sh("./bin/relapp eval "
-            "\"{relapp, _, VersionStr} = "
-            "lists:keyfind(relapp, 1, application:which_applications()),"
-            "VersionStr.\"", [], DeployDir) of
+get_app_version(App, DeployDir) ->
+    case sh(io_lib:format(
+            "./bin/relapp eval "
+            "\"{~s, _, VersionStr} = "
+            "lists:keyfind(~s, 1, application:which_applications()),"
+            "VersionStr.\"", [App, App]), [], DeployDir) of
         {ok, Version} ->
             %% unescape the string quotes
             {ok, re:replace(Version, "\"", "", [global, {return, list}])};
         _ -> {error, failed}
     end.
+
+is_app_running(App, DeployDir) ->
+    case sh(io_lib:format(
+            "./bin/relapp eval "
+            "\"R = lists:keymember(~s, 1, application:which_applications()),"
+            "R.\"", [App]), [], DeployDir) of
+        {ok, Result} ->
+            %% unescape the string quotes
+            list_to_atom(Result);
+        _ -> {error, failed}
+    end.
+
+get_running_version(DeployDir) ->
+    get_app_version("relapp", DeployDir).
 
 check_appup(RelDir, AppName, FromVersion, ToVersion) ->
     %% the .appup is generated to two locations:
