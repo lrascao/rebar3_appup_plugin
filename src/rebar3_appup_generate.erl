@@ -126,9 +126,10 @@ do(State) ->
                       [CurrentName, PreviousName]),
 
     %% Find all the apps that have been upgraded
-    Upgraded = get_apps(Name,
-                        PreviousRelPath, PreviousVer,
-                        CurrentRelPath, CurrentVer),
+    {AddApps, UpgradeApps0, RemoveApps} = get_apps(Name,
+                                                   PreviousRelPath, PreviousVer,
+                                                   CurrentRelPath, CurrentVer,
+                                                   State),
 
     %% Get a list of any appup files that exist in the current release
     CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
@@ -136,11 +137,13 @@ do(State) ->
                             ".appup"),
     %% Convert the list of appup files into app names
     CurrentAppUpApps = [file_to_name(File) || File <- CurrentAppUpFiles],
-    rebar_api:debug("apps that already have .appups: ~p", [CurrentAppUpApps]),
+    rebar_api:debug("apps that already have .appups: ~p",
+        [CurrentAppUpApps]),
 
     %% Create a list of apps that don't already have appups
-    UpgradeApps = gen_appup_which_apps(Upgraded, CurrentAppUpApps),
-    rebar_api:debug("generating .appup for apps: ~p", [UpgradeApps]),
+    UpgradeApps = gen_appup_which_apps(UpgradeApps0, CurrentAppUpApps),
+    rebar_api:debug("generating .appup for apps: ~p",
+        [AddApps ++ UpgradeApps ++ RemoveApps]),
 
     PurgeOpts0 = proplists:get_value(purge, Opts, []),
     PurgeOpts = parse_purge_opts(PurgeOpts0),
@@ -155,7 +158,7 @@ do(State) ->
                                          CurrentRelPath, PreviousRelPath,
                                          App,
                                          AppupOpts, State)
-                  end, UpgradeApps),
+                  end, AddApps ++ UpgradeApps),
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().
@@ -220,37 +223,39 @@ deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) -
     end.
 
 %% @spec get_apps(string(),atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()]) -> [any()].
-get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
-    OldApps = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
+get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer, State) ->
+    OldApps0 = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
+    OldApps = rebar3_appup_rel_utils:exclude_otp_apps(OldApps0, State),
     rebar_api:debug("previous version apps: ~p", [OldApps]),
 
-    NewApps = rebar3_appup_rel_utils:get_rel_apps(Name, NewVer, NewVerPath),
+    NewApps0 = rebar3_appup_rel_utils:get_rel_apps(Name, NewVer, NewVerPath),
+    NewApps = rebar3_appup_rel_utils:exclude_otp_apps(NewApps0, State),
     rebar_api:debug("current version apps: ~p", [NewApps]),
 
     AddedApps = app_list_diff(NewApps, OldApps),
-    rebar_api:debug("added: ~p", [AddedApps]),
-    % Added = lists:map(fun(AppName) ->
-    %                     NewAppVer = proplists:get_value(AppName, NewApps),
-    %                     {add, AppName, NewAppVer}
-    %                   end, AddedApps),
+    Added = lists:map(fun(AppName) ->
+                        AddedAppVer = proplists:get_value(AppName, NewApps),
+                        {add, AppName, AddedAppVer}
+                      end, AddedApps),
+    rebar_api:debug("added: ~p", [Added]),
 
-    % Removed = lists:map(fun(AppName) ->
-    %                         OldAppVer = proplists:get_value(AppName, OldApps),
-    %                         {remove, AppName, OldAppVer}
-    %                     end, app_list_diff(OldApps, NewApps)),
-    rebar_api:debug("removed: ~p", [app_list_diff(OldApps, NewApps)]),
+    Removed = lists:map(fun(AppName) ->
+                            RemovedAppVer = proplists:get_value(AppName, OldApps),
+                            {remove, AppName, RemovedAppVer}
+                        end, app_list_diff(OldApps, NewApps)),
+    rebar_api:debug("removed: ~p", [Removed]),
 
     Upgraded = lists:filtermap(fun(AppName) ->
-                                    OldAppVer = proplists:get_value(AppName, OldApps),
-                                    NewAppVer = proplists:get_value(AppName, NewApps),
-                                    case OldAppVer /= NewAppVer of
-                                        true ->
-                                            {true, {upgrade, AppName, {OldAppVer, NewAppVer}}};
-                                        false -> false
-                                    end
+                                OldAppVer = proplists:get_value(AppName, OldApps),
+                                NewAppVer = proplists:get_value(AppName, NewApps),
+                                case OldAppVer /= NewAppVer of
+                                    true ->
+                                        {true, {upgrade, AppName, {OldAppVer, NewAppVer}}};
+                                    false -> false
+                                end
                                end, proplists:get_keys(NewApps) -- AddedApps),
     rebar_api:debug("upgraded: ~p", [Upgraded]),
-    Upgraded.
+    {Added, Upgraded, Removed}.
 
 %% @spec app_list_diff([any()],[any()]) -> [any()].
 app_list_diff(List1, List2) ->
@@ -271,6 +276,18 @@ gen_appup_which_apps(Apps, []) ->
 
 %% @spec generate_appup_files(_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],{'upgrade',_,{'undefined' | [any()],_}},[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
+generate_appup_files(TargetDir,
+                     _NewVerPath, _OldVerPath,
+                     {add, App, Version},
+                     Opts, State) ->
+
+    UpgradeInstructions = [{add_application, App, permanent}],
+    DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
+                                                    UpgradeInstructions)),
+    ok = write_appup(App, <<".*">>, Version, TargetDir,
+                     UpgradeInstructions, DowngradeInstructions,
+                     Opts, State),
+    ok;
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
                      {upgrade, App, {OldVer, NewVer}},
@@ -376,9 +393,18 @@ write_appup(App, OldVer, NewVer, TargetDir,
         [App, AppEbinDir]),
     AppUpFiles = case TargetDir of
                     undefined ->
-                        EbinAppup = filename:join([AppEbinDir,
-                                                   atom_to_list(App) ++ ".appup"]),
-                        [EbinAppup];
+                        case AppEbinDir of
+                            undefined ->
+                                %% if we couldn't find any app ebin dir
+                                %% then don't bother generating any app
+                                rebar_api:warn("unable to generate appup for non-existing application ~p",
+                                             [App]),
+                                [];
+                            _ ->
+                                EbinAppup = filename:join([AppEbinDir,
+                                                           atom_to_list(App) ++ ".appup"]),
+                                [EbinAppup]
+                        end;
                     _ ->
                         [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
                  end,
@@ -396,9 +422,9 @@ write_appup(App, OldVer, NewVer, TargetDir,
                                 {"downgrade_instructions",
                                     io_lib:fwrite("~.9p", [DowngradeInstructions])}],
                     AppUp = bbmustache:render(AppupTemplate, AppupCtx),
-                    ok = file:write_file(AppUpFile, AppUp),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
-                        [OldVer, NewVer, App, AppUpFile])
+                        [OldVer, NewVer, App, AppUpFile]),
+                    ok = file:write_file(AppUpFile, AppUp)
                   end, AppUpFiles),
     ok.
 

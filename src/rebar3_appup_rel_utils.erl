@@ -24,7 +24,8 @@
          get_rel_release_info/1, get_rel_release_info/2,
          get_rel_apps/1, get_rel_apps/2, get_rel_apps/3,
          get_rel_releases_path/2,
-         get_release_versions/2]).
+         get_release_versions/2,
+         exclude_otp_apps/2]).
 
 %% get permanent version from start_erl.data
 %% @spec get_permanent_version(atom() | binary() | [atom() | [any()] | char()]) -> any().
@@ -105,3 +106,11 @@ get_rel_apps(RelFile) ->
         _ ->
             rebar_api:abort("Failed to parse ~s~n", [RelFile])
     end.
+
+%% TODO: FIX THIS
+exclude_otp_apps(Apps, State) ->
+    lists:filter(fun({Name, _Version}) ->
+                    NameBin = list_to_binary(atom_to_list(Name)),
+                    _AppInfo = rebar3_appup_utils:find_app_info(NameBin, State),
+                    true 
+                 end, Apps).
