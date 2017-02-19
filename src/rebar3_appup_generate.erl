@@ -38,6 +38,7 @@
 %% Public API
 %% ===================================================================
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
+%% @spec init(rebar_state:t()) -> {'ok',rebar_state:t()}.
 init(State) ->
     Provider = providers:create([
             {name, ?PROVIDER},            % The 'user friendly' name of the task
@@ -63,9 +64,10 @@ init(State) ->
     {ok, rebar_state:add_provider(State, Provider)}.
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
+%% @spec do(rebar_state:t()) -> {'ok',rebar_state:t()} | {'error',string()}.
 do(State) ->
     {Opts, _} = rebar_state:command_parsed_args(State),
-    rebar_api:debug("opts: ~p~n", [Opts]),
+    rebar_api:debug("opts: ~p", [Opts]),
 
     %% search for this plugin's appinfo in order to know
     %% where to look for the mustache templates
@@ -98,9 +100,9 @@ do(State) ->
                         P -> P
                       end,
     TargetDir = proplists:get_value(target_dir, Opts, undefined),
-    rebar_api:debug("previous release: ~p~n", [PreviousRelPath]),
-    rebar_api:debug("current release: ~p~n", [CurrentRelPath]),
-    rebar_api:debug("target dir: ~p~n", [TargetDir]),
+    rebar_api:debug("previous release: ~p", [PreviousRelPath]),
+    rebar_api:debug("current release: ~p", [CurrentRelPath]),
+    rebar_api:debug("target dir: ~p", [TargetDir]),
 
     %% deduce the previous version from the release path
     {PreviousName, _PreviousVer0} = rebar3_appup_rel_utils:get_rel_release_info(Name,
@@ -124,9 +126,10 @@ do(State) ->
                       [CurrentName, PreviousName]),
 
     %% Find all the apps that have been upgraded
-    Upgraded = get_apps(Name,
-                        PreviousRelPath, PreviousVer,
-                        CurrentRelPath, CurrentVer),
+    {AddApps, UpgradeApps0, RemoveApps} = get_apps(Name,
+                                                   PreviousRelPath, PreviousVer,
+                                                   CurrentRelPath, CurrentVer,
+                                                   State),
 
     %% Get a list of any appup files that exist in the current release
     CurrentAppUpFiles = rebar3_appup_utils:find_files_by_ext(
@@ -134,11 +137,13 @@ do(State) ->
                             ".appup"),
     %% Convert the list of appup files into app names
     CurrentAppUpApps = [file_to_name(File) || File <- CurrentAppUpFiles],
-    rebar_api:debug("apps that already have .appups: ~p", [CurrentAppUpApps]),
+    rebar_api:debug("apps that already have .appups: ~p",
+        [CurrentAppUpApps]),
 
     %% Create a list of apps that don't already have appups
-    UpgradeApps = gen_appup_which_apps(Upgraded, CurrentAppUpApps),
-    rebar_api:debug("generating .appup for apps: ~p", [UpgradeApps]),
+    UpgradeApps = gen_appup_which_apps(UpgradeApps0, CurrentAppUpApps),
+    rebar_api:debug("generating .appup for apps: ~p",
+        [AddApps ++ UpgradeApps ++ RemoveApps]),
 
     PurgeOpts0 = proplists:get_value(purge, Opts, []),
     PurgeOpts = parse_purge_opts(PurgeOpts0),
@@ -153,36 +158,41 @@ do(State) ->
                                          CurrentRelPath, PreviousRelPath,
                                          App,
                                          AppupOpts, State)
-                  end, UpgradeApps),
+                  end, AddApps ++ UpgradeApps),
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().
+%% @spec format_error(any()) -> iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
 %% ===================================================================
 %% Private API
 %% ===================================================================
+%% @spec parse_purge_opts(maybe_improper_list(binary() | maybe_improper_list(any(),binary() | []) | char(),binary() | [])) -> [[] | {atom(),{_,_}}].
 parse_purge_opts(Opts0) when is_list(Opts0) ->
     Opts1 = re:split(Opts0, ";"),
     lists:map(fun(Opt) ->
                 case re:split(Opt, "=") of
                     [Module, PrePostPurge] ->
-                        case re:split(PrePostPurge, "/") of
-                            [PrePurge, PostPurge] -> ok;
-                            [PrePostPurge] ->
-                                PrePurge = PrePostPurge,
-                                PostPurge = PrePostPurge
-                        end,
+                        {PrePurge, PostPurge} =
+                            case re:split(PrePostPurge, "/") of
+                                [PrePurge0, PostPurge0] ->
+                                    {PrePurge0, PostPurge0};
+                                [PrePostPurge] ->
+                                    {PrePostPurge, PrePostPurge}
+                            end,
                         {list_to_atom(binary_to_list(Module)),
                           {purge_opt(PrePurge), purge_opt(PostPurge)}};
                     _ -> []
                 end
               end, Opts1).
 
+%% @spec purge_opt(<<_:32,_:_*16>>) -> 'brutal_purge' | 'soft_purge'.
 purge_opt(<<"soft">>) -> soft_purge;
 purge_opt(<<"brutal">>) -> brutal_purge.
 
+%% @spec get_purge_opts(atom() | tuple(),[any()]) -> {_,_}.
 get_purge_opts(Name, Opts) ->
     {DefaultPrePurge, DefaultPostPurge} = proplists:get_value(default, Opts,
                                                             {?DEFAULT_PRE_PURGE,
@@ -191,6 +201,7 @@ get_purge_opts(Name, Opts) ->
                                                 {DefaultPrePurge, DefaultPostPurge}),
     {PrePurge, PostPurge}.
 
+%% @spec deduce_previous_version(string(),_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()]) -> any().
 deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) ->
     Versions = rebar3_appup_rel_utils:get_release_versions(Name, PreviousRelPath),
     case length(Versions) of
@@ -211,53 +222,72 @@ deduce_previous_version(Name, CurrentVersion, CurrentRelPath, PreviousRelPath) -
                             [PreviousRelPath, Versions])
     end.
 
-get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer) ->
-    OldApps = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
-    rebar_api:debug("previous version apps: ~p~n", [OldApps]),
+%% @spec get_apps(string(),atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()]) -> [any()].
+get_apps(Name, OldVerPath, OldVer, NewVerPath, NewVer, State) ->
+    OldApps0 = rebar3_appup_rel_utils:get_rel_apps(Name, OldVer, OldVerPath),
+    OldApps = rebar3_appup_rel_utils:exclude_otp_apps(OldApps0, State),
+    rebar_api:debug("previous version apps: ~p", [OldApps]),
 
-    NewApps = rebar3_appup_rel_utils:get_rel_apps(Name, NewVer, NewVerPath),
-    rebar_api:debug("current version apps: ~p~n", [NewApps]),
+    NewApps0 = rebar3_appup_rel_utils:get_rel_apps(Name, NewVer, NewVerPath),
+    NewApps = rebar3_appup_rel_utils:exclude_otp_apps(NewApps0, State),
+    rebar_api:debug("current version apps: ~p", [NewApps]),
 
     AddedApps = app_list_diff(NewApps, OldApps),
-    rebar_api:debug("added: ~p", [AddedApps]),
-    % Added = lists:map(fun(AppName) ->
-    %                     NewAppVer = proplists:get_value(AppName, NewApps),
-    %                     {add, AppName, NewAppVer}
-    %                   end, AddedApps),
+    Added = lists:map(fun(AppName) ->
+                        AddedAppVer = proplists:get_value(AppName, NewApps),
+                        {add, AppName, AddedAppVer}
+                      end, AddedApps),
+    rebar_api:debug("added: ~p", [Added]),
 
-    % Removed = lists:map(fun(AppName) ->
-    %                         OldAppVer = proplists:get_value(AppName, OldApps),
-    %                         {remove, AppName, OldAppVer}
-    %                     end, app_list_diff(OldApps, NewApps)),
-    rebar_api:debug("removed: ~p", [app_list_diff(OldApps, NewApps)]),
+    Removed = lists:map(fun(AppName) ->
+                            RemovedAppVer = proplists:get_value(AppName, OldApps),
+                            {remove, AppName, RemovedAppVer}
+                        end, app_list_diff(OldApps, NewApps)),
+    rebar_api:debug("removed: ~p", [Removed]),
 
     Upgraded = lists:filtermap(fun(AppName) ->
-                                    OldAppVer = proplists:get_value(AppName, OldApps),
-                                    NewAppVer = proplists:get_value(AppName, NewApps),
-                                    case OldAppVer /= NewAppVer of
-                                        true ->
-                                            {true, {upgrade, AppName, {OldAppVer, NewAppVer}}};
-                                        false -> false
-                                    end
+                                OldAppVer = proplists:get_value(AppName, OldApps),
+                                NewAppVer = proplists:get_value(AppName, NewApps),
+                                case OldAppVer /= NewAppVer of
+                                    true ->
+                                        {true, {upgrade, AppName, {OldAppVer, NewAppVer}}};
+                                    false -> false
+                                end
                                end, proplists:get_keys(NewApps) -- AddedApps),
     rebar_api:debug("upgraded: ~p", [Upgraded]),
-    Upgraded.
+    {Added, Upgraded, Removed}.
 
+%% @spec app_list_diff([any()],[any()]) -> [any()].
 app_list_diff(List1, List2) ->
     List3 = lists:umerge(lists:sort(proplists:get_keys(List1)),
                          lists:sort(proplists:get_keys(List2))),
     List3 -- proplists:get_keys(List2).
 
+%% @spec file_to_name(atom() | binary() | [atom() | [any()] | char()]) -> binary() | string().
 file_to_name(File) ->
     filename:rootname(filename:basename(File)).
 
+%% @spec gen_appup_which_apps([any()],[string()]) -> [any()].
 gen_appup_which_apps(UpgradedApps, [First|Rest]) ->
     List = proplists:delete(list_to_atom(First), UpgradedApps),
     gen_appup_which_apps(List, Rest);
 gen_appup_which_apps(Apps, []) ->
     Apps.
 
+%% @spec generate_appup_files(_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],{'upgrade',_,{'undefined' | [any()],_}},[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 generate_appup_files(_, _, _, {upgrade, _App, {undefined, _}}, _, _) -> ok;
+generate_appup_files(TargetDir,
+                     _NewVerPath, _OldVerPath,
+                     {add, App, Version},
+                     Opts, State) ->
+
+    UpgradeInstructions = [{add_application, App, permanent}],
+    DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
+                                                    UpgradeInstructions)),
+    ok = write_appup(App, <<".*">>, Version, TargetDir,
+                     UpgradeInstructions, DowngradeInstructions,
+                     Opts, State),
+    ok;
 generate_appup_files(TargetDir,
                      NewVerPath, OldVerPath,
                      {upgrade, App, {OldVer, NewVer}},
@@ -269,9 +299,13 @@ generate_appup_files(TargetDir,
 
     {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
                                                                  OldRelEbinDir),
+    rebar_api:debug("beam files:", []),
+    rebar_api:debug("   added: ~p", [AddedFiles]),
+    rebar_api:debug("   deleted: ~p", [DeletedFiles]),
+    rebar_api:debug("   changed: ~p", [ChangedFiles]),
 
     %% generate a module dependency tree
-    ModDeps = module_dependencies(AddedFiles ++ DeletedFiles ++ ChangedFiles),
+    ModDeps = module_dependencies(AddedFiles ++ ChangedFiles),
     rebar_api:debug("deps: ~p", [ModDeps]),
 
     Added = lists:map(fun(File) ->
@@ -284,15 +318,25 @@ generate_appup_files(TargetDir,
                             generate_instruction(upgrade, ModDeps, File, Opts)
                         end, ChangedFiles),
 
-    UpgradeInstructions = lists:append([Added, Deleted, Changed]),
-    DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
-                                                    UpgradeInstructions)),
+    UpgradeInstructions0 = lists:append([Added, Changed, Deleted]),
+    %% check for updated supervisors, we'll need to check their child spec
+    %% and see if any childs were added or removed
+    UpgradeInstructions1 = apply_supervisor_child_updates(UpgradeInstructions0,
+                                                          Added, Deleted,
+                                                          OldRelEbinDir, NewRelEbinDir),
+    UpgradeInstructions = lists:flatten(UpgradeInstructions1),
+    rebar_api:debug("upgrade instructions: ~p", [UpgradeInstructions]),
+    DowngradeInstructions0 = lists:reverse(lists:map(fun invert_instruction/1,
+                                                     UpgradeInstructions1)),
+    DowngradeInstructions = lists:flatten(DowngradeInstructions0),
+    rebar_api:debug("downgrade instructions: ~p", [DowngradeInstructions]),
 
     ok = write_appup(App, OldVer, NewVer, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
                      Opts, State),
     ok.
 
+%% @spec module_dependencies([string() | {[any()],[any()]}]) -> [{atom(),[any()]}].
 module_dependencies(Files) ->
     %% build a unique list of directories holding the supplied files
     Dirs0 = lists:map(fun({File, _}) ->
@@ -310,6 +354,7 @@ module_dependencies(Files) ->
     Mods = [list_to_atom(file_to_name(F)) || {F, _} <- Files],
     module_dependencies(Mods, Mods, []).
 
+%% @spec module_dependencies([atom()],[atom()],[{atom(),[any()]}]) -> [{atom(),[any()]}].
 module_dependencies([], _Mods, Acc) ->
     xref:stop(xref),
     Acc;
@@ -323,26 +368,43 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
     Deps = sets:to_list(sets:intersection(Set0, Set1)),
     module_dependencies(Rest, Mods, Acc ++ [{Mod, Deps}]).
 
+%% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 write_appup(App, OldVer, NewVer, TargetDir,
             UpgradeInstructions, DowngradeInstructions,
             Opts, State) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     %% check for the app either in deps or lib
+    rebar_api:info("current base dir: ~p", [CurrentBaseDir]),
+    CheckoutsEbinDir = filename:join([rebar_dir:checkouts_dir(State),
+                                      atom_to_list(App), "ebin"]),
     DepsEbinDir = filename:join([CurrentBaseDir, "deps",
                                 atom_to_list(App), "ebin"]),
     LibEbinDir = filename:join([CurrentBaseDir, "lib",
                                 atom_to_list(App), "ebin"]),
     AppEbinDir = case {filelib:is_dir(DepsEbinDir),
-                       filelib:is_dir(LibEbinDir)} of
-                    {true, _} -> DepsEbinDir;
-                    {_, true} -> LibEbinDir;
-                    {_, _} -> undefined
+                       filelib:is_dir(LibEbinDir),
+                       filelib:is_dir(CheckoutsEbinDir)} of
+                    {true, _, _} -> DepsEbinDir;
+                    {_, true, _} -> LibEbinDir;
+                    {_, _, true} -> CheckoutsEbinDir;
+                    {_, _, _} -> undefined
                  end,
+    rebar_api:info("app ~p ebin dir: ~p",
+        [App, AppEbinDir]),
     AppUpFiles = case TargetDir of
                     undefined ->
-                        EbinAppup = filename:join([AppEbinDir,
-                                                   atom_to_list(App) ++ ".appup"]),
-                        [EbinAppup];
+                        case AppEbinDir of
+                            undefined ->
+                                %% if we couldn't find any app ebin dir
+                                %% then don't bother generating any app
+                                rebar_api:warn("unable to generate appup for non-existing application ~p",
+                                             [App]),
+                                [];
+                            _ ->
+                                EbinAppup = filename:join([AppEbinDir,
+                                                           atom_to_list(App) ++ ".appup"]),
+                                [EbinAppup]
+                        end;
                     _ ->
                         [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
                  end,
@@ -360,12 +422,13 @@ write_appup(App, OldVer, NewVer, TargetDir,
                                 {"downgrade_instructions",
                                     io_lib:fwrite("~.9p", [DowngradeInstructions])}],
                     AppUp = bbmustache:render(AppupTemplate, AppupCtx),
-                    ok = file:write_file(AppUpFile, AppUp),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
-                        [OldVer, NewVer, App, AppUpFile])
+                        [OldVer, NewVer, App, AppUpFile]),
+                    ok = file:write_file(AppUpFile, AppUp)
                   end, AppUpFiles),
     ok.
 
+%% @spec generate_instruction('add_module' | 'delete_module' | 'upgrade',[{atom(),[any()]}],atom() | binary() | [atom() | [any()] | char()] | {atom() | binary() | string() | tuple(),_},[{'plugin_dir',_} | {'purge_opts',[any()]},...]) -> {'delete_module',atom()} | {'add_module',atom(),_} | {'update',atom() | tuple(),'supervisor'} | {'load_module',atom() | tuple(),_,_,_} | {'update',atom() | tuple(),{'advanced',[]},_,_,_}.
 generate_instruction(add_module, ModDeps, File, _Opts) ->
     Name = list_to_atom(file_to_name(File)),
     Deps = proplists:get_value(Name, ModDeps, []),
@@ -376,12 +439,12 @@ generate_instruction(delete_module, ModDeps, File, _Opts) ->
     % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
     % {delete_module, Name, Deps};
     {delete_module, Name};
-generate_instruction(added_application, Application, _, _Opts) ->
-    {add_application, Application, permanent};
-generate_instruction(removed_application, Application, _, _Opts) ->
-    {remove_application, Application};
-generate_instruction(restarted_application, Application, _, _Opts) ->
-    {restart_application, Application};
+%generate_instruction(added_application, Application, _, _Opts) ->
+%    {add_application, Application, permanent};
+%generate_instruction(removed_application, Application, _, _Opts) ->
+%    {remove_application, Application};
+%generate_instruction(restarted_application, Application, _, _Opts) ->
+%    {restart_application, Application};
 generate_instruction(upgrade, ModDeps, {File, _}, Opts) ->
     {ok, {Name, List}} = beam_lib:chunks(File, [attributes, exports]),
     Behavior = get_behavior(List),
@@ -389,12 +452,13 @@ generate_instruction(upgrade, ModDeps, {File, _}, Opts) ->
     Deps = proplists:get_value(Name, ModDeps, []),
     generate_instruction_advanced(Name, Behavior, CodeChange, Deps, Opts).
 
+%% @spec generate_instruction_advanced(atom() | tuple(),_,'code_change' | 'undefined',_,[{'plugin_dir',_} | {'purge_opts',[any()]},...]) -> {'update',atom() | tuple(),'supervisor'} | {'load_module',atom() | tuple(),_,_,_} | {'update',atom() | tuple(),{'advanced',[]},_,_,_}.
 generate_instruction_advanced(Name, undefined, undefined, Deps, Opts) ->
     PurgeOpts = proplists:get_value(purge_opts, Opts, []),
     {PrePurge, PostPurge} = get_purge_opts(Name, PurgeOpts),
     %% Not a behavior or code change, assume purely functional
     {load_module, Name, PrePurge, PostPurge, Deps};
-generate_instruction_advanced(Name, [supervisor], _, _, _Opts) ->
+generate_instruction_advanced(Name, supervisor, _, _, _Opts) ->
     %% Supervisor
     {update, Name, supervisor};
 generate_instruction_advanced(Name, _, code_change, Deps, Opts) ->
@@ -408,6 +472,14 @@ generate_instruction_advanced(Name, _, _, Deps, Opts) ->
     %% Anything else
     {load_module, Name, PrePurge, PostPurge, Deps}.
 
+generate_supervisor_child_instruction(new, Mod, Worker) ->
+    [{update, Mod, supervisor},
+     {apply, {supervisor, restart_child, [Mod, Worker]}}];
+generate_supervisor_child_instruction(remove, Mod, Worker) ->
+    [{apply, {supervisor, terminate_child, [Mod, Worker]}},
+     {apply, {supervisor, delete_child, [Mod, Worker]}},
+     {update, Mod, supervisor}].
+
 invert_instruction({load_module, Name, PrePurge, PostPurge, Deps}) ->
     {load_module, Name, PrePurge, PostPurge, Deps};
 invert_instruction({add_module, Name, _Deps}) ->
@@ -415,7 +487,7 @@ invert_instruction({add_module, Name, _Deps}) ->
     % {delete_module, Name, Deps};
     {delete_module, Name};
 invert_instruction({delete_module, Name}) ->
-    % TODO: add dependencies to delete_module, fixed in OTP commit a4290bb3
+    % TODO: add dependencies to add_module, fixed in OTP commit a4290bb3
     % {add_module, Name, Deps};
     {add_module, Name};
 invert_instruction({add_application, Application, permanent}) ->
@@ -425,15 +497,30 @@ invert_instruction({remove_application, Application}) ->
 invert_instruction({update, Name, supervisor}) ->
     {update, Name, supervisor};
 invert_instruction({update, Name, {advanced, []}, PrePurge, PostPurge, Deps}) ->
-    {update, Name, {advanced, []}, PrePurge, PostPurge, Deps}.
+    {update, Name, {advanced, []}, PrePurge, PostPurge, Deps};
+invert_instruction([{update, Name, supervisor},
+                    {apply, {supervisor, restart_child, [Sup, Worker]}}]) ->
+    [{apply, {supervisor, terminate_child, [Sup, Worker]}},
+     {apply, {supervisor, delete_child, [Sup, Worker]}},
+     {update, Name, supervisor}];
+invert_instruction([{apply, {supervisor, terminate_child, [Sup, Worker]}},
+                    {apply, {supervisor, delete_child, [Sup, Worker]}},
+                    {update, Name, supervisor}]) ->
+    [{update, Name, supervisor},
+     {apply, {supervisor, restart_child, [Sup, Worker]}}].
 
+
+%% @spec get_behavior([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> any().
 get_behavior(List) ->
     Attributes = proplists:get_value(attributes, List),
-    case proplists:get_value(behavior, Attributes) of
-        undefined -> proplists:get_value(behaviour, Attributes);
-        Else -> Else
+    case {proplists:get_value(behavior, Attributes),
+          proplists:get_value(behaviour, Attributes)} of
+        {undefined, undefined} -> undefined;
+        {[B],  undefined} -> B;
+        {undefined,  [B]} -> B
     end.
 
+%% @spec is_code_change([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> 'code_change' | 'undefined'.
 is_code_change(List) ->
     Exports = proplists:get_value(exports, List),
     case proplists:is_defined(code_change, Exports) orelse
@@ -443,3 +530,131 @@ is_code_change(List) ->
         false ->
             undefined
     end.
+
+apply_supervisor_child_updates(Instructions, Added, Deleted,
+                               OldRelEbinDir, NewRelEbinDir) ->
+    apply_supervisor_child_updates(Instructions, Added, Deleted,
+                                   OldRelEbinDir, NewRelEbinDir, []).
+
+apply_supervisor_child_updates([], _, _, _, _, Acc) -> Acc;
+apply_supervisor_child_updates([{update, Name, supervisor} | Rest],
+                               Added, Deleted,
+                               OldRelEbinDir, NewRelEbinDir, Acc) ->
+    OldSupervisorSpec = get_supervisor_spec(Name, OldRelEbinDir),
+    NewSupervisorSpec = get_supervisor_spec(Name, NewRelEbinDir),
+    rebar_api:debug("old supervisor spec: ~p",
+            [OldSupervisorSpec]),
+    rebar_api:debug("new supervisor spec: ~p",
+            [NewSupervisorSpec]),
+    Diff = diff_supervisor_spec(OldSupervisorSpec,
+                                NewSupervisorSpec),
+    NewWorkers = proplists:get_value(new_workers, Diff),
+    RemovedWorkers = proplists:get_value(removed_workers, Diff),
+    rebar_api:debug("supervisor workers added: ~p",
+            [NewWorkers]),
+    rebar_api:debug("supervisor workers removed: ~p",
+            [RemovedWorkers]),
+    AddInstructions = [generate_supervisor_child_instruction(new, Name, N) ||
+                        N <- NewWorkers],
+    RemoveInstructions = [generate_supervisor_child_instruction(remove, Name, R) ||
+                            R <- RemovedWorkers],
+    Instructions = ensure_supervisor_update(Name, AddInstructions ++ RemoveInstructions),
+    apply_supervisor_child_updates(Rest, Added, Deleted,
+                                   OldRelEbinDir, NewRelEbinDir,
+                                   Acc ++ Instructions);
+apply_supervisor_child_updates([Else | Rest],
+                               Added, Deleted,
+                               OldRelEbinDir, NewRelEbinDir, Acc) ->
+    apply_supervisor_child_updates(Rest, Added, Deleted,
+                                   OldRelEbinDir, NewRelEbinDir, Acc ++ [Else]).
+
+ensure_supervisor_update(Name, []) ->
+    [{update, Name, supervisor}];
+ ensure_supervisor_update(_, Instructions) ->
+    Instructions.
+
+get_supervisor_spec(Module, EbinDir) ->
+    Beam = rebar3_appup_utils:beam_rel_path(EbinDir, atom_to_list(Module)),
+    {module, Module} = rebar3_appup_utils:load_module_from_beam(Beam, Module),
+    {ok, Arg} = guess_supervisor_init_arg(Module, Beam),
+    rebar_api:debug("supervisor init arg: ~p", [Arg]),
+    Spec = case catch Module:init(Arg) of
+            {ok, S} -> S;
+            _ ->
+                rebar_api:info("could not obtain supervisor ~p spec, unable to generate "
+                               "supervisor appup instructions", [Module]),
+                undefined
+           end,
+    rebar3_appup_utils:unload_module_from_beam(Beam, Module),
+    Spec.
+
+diff_supervisor_spec({_, Spec1}, {_, Spec2}) ->
+    Workers1 = supervisor_spec_workers(Spec1, []),
+    Workers2 = supervisor_spec_workers(Spec2, []),
+    [{new_workers, Workers2 -- Workers1},
+     {removed_workers, Workers1 -- Workers2}];
+diff_supervisor_spec(_, _) ->
+    [{new_workers, []}, {removed_workers, []}].
+
+supervisor_spec_workers([], Acc) -> Acc;
+supervisor_spec_workers([{_, {Mod, _F, _A}, _, _, worker, _} | Rest], Acc) ->
+    supervisor_spec_workers(Rest, Acc ++ [Mod]);
+supervisor_spec_workers([_ | Rest], Acc) ->
+    supervisor_spec_workers(Rest, Acc).
+
+guess_supervisor_init_arg(Module, Beam) ->
+    %% obtain the abstract code and from that try and guess what
+    %% are valid arguments for the supervisor init/1 method
+    Forms =  case rebar3_appup_utils:get_abstract_code(Module, Beam) of
+                no_abstract_code=E ->
+                    {error, E};
+                encrypted_abstract_code=E ->
+                    {error, E};
+                {raw_abstract_v1, Code} ->
+                    epp:interpret_file_attribute(Code)
+              end,
+    {ok, AbsArg} = get_supervisor_init_arg_abstract(Forms),
+    rebar_api:debug("supervisor abstract init arg: ~p", [AbsArg]),
+    Arg = generate_supervisor_init_arg(AbsArg),
+    {ok, Arg}.
+
+get_supervisor_init_arg_abstract(Forms) ->
+    [L] = lists:filtermap(fun({function, _, init, 1, [Clause]}) ->
+                            %% currently not supporting more that one function clause
+                            %% for the Mod:init/1 supervisor callback
+                            %% extract the argument from the function clause
+                            {clause, _, [Arg], _, _} = Clause,
+                            {true, Arg};
+                           (_) -> false
+                        end, Forms),
+    {ok, L}.
+
+generate_supervisor_init_arg({nil, _}) -> [];
+generate_supervisor_init_arg({var, _, _}) -> undefined;
+generate_supervisor_init_arg({cons, _, Head, Rest}) ->
+    [generate_supervisor_init_arg(Head) | generate_supervisor_init_arg(Rest)];
+generate_supervisor_init_arg({integer, _, Value}) -> Value;
+generate_supervisor_init_arg({string, _, Value}) -> Value;
+generate_supervisor_init_arg({atom, _, Value}) -> Value;
+generate_supervisor_init_arg({tuple, _, Elements}) ->
+    L = [generate_supervisor_init_arg(Element) || Element <- Elements],
+    Tuple0 = generate_tuple(length(L)),
+    {Tuple, _} = lists:foldl(fun(E, {T0, Index}) ->
+                                T1 = erlang:setelement(Index, T0, E),
+                                {T1, Index + 1}
+                             end, {Tuple0, 1}, L),
+    Tuple;
+generate_supervisor_init_arg(_) -> undefined.
+
+
+generate_tuple(1) -> {undefined};
+generate_tuple(2) -> {undefined, undefined};
+generate_tuple(3) -> {undefined, undefined, undefined};
+generate_tuple(4) -> {undefined, undefined, undefined, undefined};
+generate_tuple(5) -> {undefined, undefined, undefined, undefined, undefined};
+generate_tuple(6) -> {undefined, undefined, undefined, undefined,
+                      undefined, undefined};
+generate_tuple(7) -> {undefined, undefined, undefined, undefined,
+                      undefined, undefined, undefined};
+generate_tuple(8) -> {undefined, undefined, undefined, undefined,
+                      undefined, undefined, undefined, undefined}.

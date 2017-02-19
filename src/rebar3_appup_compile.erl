@@ -30,6 +30,7 @@
 %% Public API
 %% ===================================================================
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
+%% @spec init(rebar_state:t()) -> {'ok',rebar_state:t()}.
 init(State) ->
     Provider = providers:create([
             {name, ?PROVIDER},            % The 'user friendly' name of the task
@@ -45,6 +46,7 @@ init(State) ->
     {ok, rebar_state:add_provider(State, Provider)}.
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
+%% @spec do(rebar_state:t()) -> {'ok',rebar_state:t()} | {'error',string()}.
 do(State) ->
     Apps = case rebar_state:current_app(State) of
             undefined ->
@@ -65,7 +67,7 @@ do(State) ->
                                     %% contents to it
                                     AppUpFile = rebar3_appup_utils:tmp_filename(),
                                     ok = file:write_file(AppUpFile, AppUpBin),
-                                    case evaluate(AppUpFile) of
+                                    case evaluate(AppUpFile, State) of
                                         {ok, AppupTerm} ->
                                             compile(AppupTerm, Target);
                                         {error, Reason} ->
@@ -84,6 +86,7 @@ do(State) ->
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().
+%% @spec format_error(any()) -> iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
@@ -92,13 +95,15 @@ format_error(Reason) ->
 %% ===================================================================
 -type bs_vars() :: [{term(), term()}].
 -spec bs(bs_vars()) -> bs_vars().
+%% @spec bs(bs_vars()) -> bs_vars().
 bs(Vars) ->
     lists:foldl(fun({K,V}, Bs) ->
                         erl_eval:add_binding(K, V, Bs)
                 end, erl_eval:new_bindings(), Vars).
 
-evaluate(Source) ->
-    file:script(Source, bs([])).
+%% @spec evaluate(binary() | string()) -> {'error',atom() | {integer(),atom() | tuple(),_}} | {'ok',_}.
+evaluate(Source, State) ->
+    file:script(Source, bs([{'STATE', State}])).
 
 template(Source, AppInfo) ->
     Context = [{"vsn", rebar_app_info:original_vsn(AppInfo)}],
@@ -126,15 +131,17 @@ compile(AppupTerm, Target) ->
                     ok
             end;
         _ ->
-            rebar_api:abort("Failed to compile not an appup:\n~p~n",
+            rebar_api:abort("Failed to compile not an appup:\n~p",
                 [AppupTerm])
     end.
 
+%% @spec appup_file_src(_) -> binary() | string().
 appup_file_src(AppInfo) ->
     Dir = rebar_app_info:dir(AppInfo),
     Name = rebar_app_info:name(AppInfo),
     filename:join([Dir, "src", ec_cnv:to_list(Name) ++ ".appup.src"]).
 
+%% @spec appup_file_target(_) -> binary() | string().
 appup_file_target(AppInfo) ->
     OutDir = rebar_app_info:ebin_dir(AppInfo),
     Name = rebar_app_info:name(AppInfo),

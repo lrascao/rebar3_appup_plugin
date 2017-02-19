@@ -36,6 +36,7 @@
 %% Public API
 %% ===================================================================
 -spec init(rebar_state:t()) -> {ok, rebar_state:t()}.
+%% @spec init(rebar_state:t()) -> {'ok',rebar_state:t()}.
 init(State) ->
     Provider = providers:create([
             {name, ?PROVIDER},            % The 'user friendly' name of the task
@@ -52,6 +53,7 @@ init(State) ->
     {ok, rebar_state:add_provider(State, Provider)}.
 
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
+%% @spec do(rebar_state:t()) -> {'ok',rebar_state:t()} | {'error',string()}.
 do(State) ->
     RelxConfig = rebar_state:get(State, relx, []),
     {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
@@ -97,6 +99,7 @@ do(State) ->
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().
+%% @spec format_error(any()) -> iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
@@ -104,11 +107,13 @@ format_error(Reason) ->
 %% Private API
 %% ===================================================================
 
+%% @spec handle_upgrade([{_,[any()]}],[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> 'ok'.
 handle_upgrade([], _Opts) -> ok;
 handle_upgrade([{UpFromVersion, Instructions} | Rest], Opts) ->
     handle_upgrade_instruction(UpFromVersion, Instructions, Opts),
     handle_upgrade(Rest, Opts).
 
+%% @spec handle_upgrade_instruction(_,[any()],[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> 'ok'.
 handle_upgrade_instruction(_, [], _) -> ok;
 handle_upgrade_instruction(UpFromVersion,
                            [{update, Module, _Change, _PrePurge, _PostPurge, _DepMods} | Rest],
@@ -154,19 +159,21 @@ handle_upgrade_instruction(UpFromVersion,
 handle_upgrade_instruction(UpFromVersion, [_ | Rest], Opts) ->
     handle_upgrade_instruction(UpFromVersion, Rest, Opts).
 
+%% @spec get_gen_server_data([atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],[atom() | [any()] | char()],string(),_) -> [{'abstract_code' | 'attributes' | 'beam' | 'compile_info' | 'exports' | 'module' | 'state_record_abstract_code' | 'state_record_fields' | 'state_record_name' | 'version',_}].
 get_gen_server_data(App, RelDir, Version, ModuleStr, StateRecordName) ->
-    Beam = beam_rel_path(App, RelDir, Version, ModuleStr),
+    Beam = rebar3_appup_utils:beam_rel_path(App, RelDir, Version, ModuleStr),
     case filelib:is_file(Beam) of
       true ->
         get_gen_server_data(Beam, Version, ModuleStr, StateRecordName);
       false -> []
     end.
 
+%% @spec get_gen_server_data(binary() | string(),[atom() | [any()] | char()],string(),_) -> [{'abstract_code' | 'attributes' | 'beam' | 'compile_info' | 'exports' | 'module' | 'state_record_abstract_code' | 'state_record_fields' | 'state_record_name' | 'version',_},...].
 get_gen_server_data(Beam, Version, ModuleStr, StateRecordName0) ->
-    {module, Module} = load_module_from_beam(Beam, list_to_atom(ModuleStr)),
+    {module, Module} = rebar3_appup_utils:load_module_from_beam(Beam, list_to_atom(ModuleStr)),
     Attributes = Module:module_info(attributes),
     Exports = Module:module_info(exports),
-    Forms =  case get_abstract_code(Module, Beam) of
+    Forms =  case rebar3_appup_utils:get_abstract_code(Module, Beam) of
                 no_abstract_code=E ->
                     {error, E};
                 encrypted_abstract_code=E ->
@@ -187,7 +194,7 @@ get_gen_server_data(Beam, Version, ModuleStr, StateRecordName0) ->
                         get_state_data(Module, StateRecordName, Forms)
                 end,
     CompileInfo = get_compile_info(Module, Beam),
-    ok = unload_module_from_beam(Beam, Module),
+    ok = rebar3_appup_utils:unload_module_from_beam(Beam, Module),
     [{version, Version},
      {beam, Beam},
      {module, Module},
@@ -196,6 +203,7 @@ get_gen_server_data(Beam, Version, ModuleStr, StateRecordName0) ->
      {abstract_code, Forms},
      {compile_info, CompileInfo}] ++ StateData.
 
+%% @spec get_state_data(atom(),_,[any()]) -> [{'state_record_abstract_code',_} | {'state_record_fields',[{_,_}]} | {'state_record_name',_},...].
 get_state_data(Module, StateRecordName, Forms) ->
     %% extract state record info, a proplists of key position pairs
     Info = state_record_info(Module, StateRecordName, Forms),
@@ -205,8 +213,10 @@ get_state_data(Module, StateRecordName, Forms) ->
      {state_record_fields, Info},
      {state_record_abstract_code, StateRecordAbst}].
 
+%% @spec abst_atom_name({'atom',_,_}) -> any().
 abst_atom_name({atom, _L, Name}) -> Name.
 
+%% @spec state_record_info(atom(),_,[any()]) -> [{_,number()}].
 state_record_info(_Module, RecordName, Forms) ->
     {attribute, _L0, record, {RecordName, Fields}} = extract_record(RecordName, Forms),
     {L, _} =
@@ -221,15 +231,7 @@ state_record_info(_Module, RecordName, Forms) ->
                        end, 2, Fields),
     L.
 
-get_abstract_code(Module, Beam) ->
-    case beam_lib:chunks(Beam, [abstract_code]) of
-        {ok, {Module, [{abstract_code, AbstractCode}]}} ->
-            AbstractCode;
-        {error, beam_lib, {key_missing_or_invalid, _, _}} ->
-            encrypted_abstract_code;
-        Error -> Error
-    end.
-
+%% @spec get_compile_info(atom(),binary() | string()) -> 'no_abstract_code' | binary() | [{atom() | integer(),_} | {atom(),atom() | byte(),integer()} | {non_neg_integer(),atom() | tuple(),atom(),byte()}] | {atom(),[any()]}.
 get_compile_info(Module, Beam) ->
     case beam_lib:chunks(Beam, [compile_info]) of
         {ok, {Module, [{compile_info, Compile}]}} ->
@@ -237,22 +239,7 @@ get_compile_info(Module, Beam) ->
         _ -> []
     end.
 
-load_module_from_beam(Beam, Module) ->
-    true = code:add_path(filename:dirname(Beam)),
-    {module, Module} = code:load_file(Module).
-
-unload_module_from_beam(Beam, Module) ->
-    code:del_path(filename:dirname(Beam)),
-    code:delete(Module),
-    code:purge(Module),
-    ok.
-
-beam_rel_path(App, RelDir, Version, Module) ->
-    filename:join([RelDir, App, "lib",
-                   App ++ "-" ++ Version,
-                   "ebin",
-                   Module ++ ".beam"]).
-
+%% @spec do_state_record_migration(atom(),string(),[{'abstract_code' | 'attributes' | 'beam' | 'compile_info' | 'exports' | 'module' | 'state_record_abstract_code' | 'state_record_fields' | 'state_record_name' | 'version',_}],[atom() | [any()] | char()],[{'abstract_code' | 'attributes' | 'beam' | 'compile_info' | 'exports' | 'module' | 'state_record_abstract_code' | 'state_record_fields' | 'state_record_name' | 'version',_}],[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> any().
 do_state_record_migration(Module,
                           FromVersion, FromData,
                           _ToVersion, ToData, Opts) ->
@@ -319,6 +306,7 @@ do_state_record_migration(Module,
           [Errors, Warnings])
     end.
 
+%% @spec extract_record(_,[any()]) -> any().
 extract_record(RecordName, Forms) ->
     [RecordAbst] =
       lists:filter(fun({attribute, _L, record, {R, _}})
@@ -327,16 +315,20 @@ extract_record(RecordName, Forms) ->
                 end, Forms),
     RecordAbst.
 
+%% @spec apply_version_record_name(atom(),string()) -> atom().
 apply_version_record_name(Name, Version) ->
     %% follow the exprecs format (eg. <record>__<version>)
     list_to_atom(atom_to_list(Name) ++ "__" ++ Version).
 
+%% @spec apply_record_line(_,{'attribute',_,'record',{atom(),_}}) -> {'attribute',_,'record',{atom(),_}}.
 apply_record_line(L, {attribute, _, record, RecordDef}) ->
     {attribute, L, record, RecordDef}.
 
+%% @spec apply_record_name(atom(),{'attribute',_,'record',{_,_}}) -> {'attribute',_,'record',{atom(),_}}.
 apply_record_name(Name, {attribute, L, record, {_, Fields}}) ->
     {attribute, L, record, {Name, Fields}}.
 
+%% @spec inject_record(atom(),_,[any()]) -> [any(),...].
 inject_record(RecordName, RecordAbst, Forms0) ->
     {value, {eof, L0}} = lists:keysearch(eof, 1, Forms0),
     Forms =
@@ -347,9 +339,11 @@ inject_record(RecordName, RecordAbst, Forms0) ->
                 end, Forms0),
     Forms ++ [{eof, L0 + 1}].
 
+%% @spec apply_method_line(_,{'function',_,_,_,_}) -> {'function',_,_,_,_}.
 apply_method_line(L, {function, _, Method, Arity, Clauses}) ->
     {function, L, Method, Arity, Clauses}.
 
+%% @spec inject_method(_,[any(),...]) -> [any(),...].
 inject_method(Form, Forms0) ->
     {value, {eof, L}} = lists:keysearch(eof, 1, Forms0),
     Forms1 =
@@ -359,6 +353,7 @@ inject_method(Form, Forms0) ->
                 end, Forms0),
     Forms1 ++ [{eof, L + 1}].
 
+%% @spec inject_code_change_convert_call([any(),...],[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> [any(),...].
 inject_code_change_convert_call(Forms, Opts) ->
     %% search for the code_change function
     lists:map(fun({function, L, code_change, 3, FunctionClauses0}) ->
@@ -369,14 +364,17 @@ inject_code_change_convert_call(Forms, Opts) ->
                  (Form) -> Form
               end, Forms).
 
+%% @spec quote(_) -> [any()].
 quote(S) ->
   lists:flatten(io_lib:format("\"~s\"", [S])).
 
+%% @spec format_literal('integer' | 'string',_) -> [any()].
 format_literal(string, Literal) -> quote(Literal);
 format_literal(integer, Literal) ->
     integer_to_list(Literal).
 
 %% code_change(OldVsn, State, Extra) ->
+%% @spec match_code_change_args([any(),...]) -> {'undefined' | [{'integer',_,_} | {'string',_,_} | {'tuple',_,[any(),...]} | {'var',_,'__Extra0__' | '__OldVsn__' | '__State0__'},...],[{'extra_ret',[any()]} | {'old_vsn_arg',[any()]} | {'old_vsn_ret',[any()]} | {'state_ret',[any()]}]}.
 match_code_change_args([{var, L0, OldVsnVar}, {var, L1, StateVar}, {var, L2, ExtraVar}]) ->
     NewArgs = [{var, L0, '__OldVsn__'},
                {var, L1, '__State0__'},
@@ -425,8 +423,11 @@ match_code_change_args([_, _, _]) ->
     {undefined, []}.
 
 % TODO - upply the code change line to the call
+-spec apply_code_change_line(_, erl_parse:abstract_form()) -> erl_parse:abstract_form().
+%% @spec apply_code_change_line(_,_) -> any().
 apply_code_change_line(_L, AbstConvertCall) -> AbstConvertCall.
 
+%% @spec inject_code_change_clause({'clause',_,[any(),...],[],_},[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> {'clause',_,[any(),...],[],_}.
 inject_code_change_clause({clause, L, Args, [], Body0} = Clause, Opts) ->
     %% modify the args, rename the second argument which is the state to be migrated
     %% and the third one which is the extra options
@@ -459,6 +460,7 @@ inject_code_change_clause({clause, L, Args, [], Body0} = Clause, Opts) ->
     end.
 
 -spec to_abstract(string()) -> erl_parse:abstract_form().
+%% @spec to_abstract(string()) -> erl_parse:abstract_form().
 to_abstract(String) ->
     {ok, Tokens, _EndLocation} =
         erl_scan:string(String),
