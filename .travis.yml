@@ -6,6 +6,6 @@ otp_release:
   - 17.5
   - R16B03-1
 before_script:
-  - wget https://s3-us-west-2.amazonaws.com/rebar3-canary/canary/rebar3
+  - wget https://s3.amazonaws.com/rebar3-nightly/rebar3
   - chmod u+x rebar3
 script: "make travis"
