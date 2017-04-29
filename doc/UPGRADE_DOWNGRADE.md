@@ -33,15 +33,13 @@ Using the example [relapp1 release](https://github.com/lrascao/relapp1) (this ap
 ## Deploying the upgrade
 
 Deploying the new version is also straightforward, it involves (in the live machine):
-   * Creating a new folder beneath ´releases´ for the version you're upgrading to
-   * Copying the new tarball to that folder without the version in it's filename (ie. relapp-1.0.12.tar.gz becomes relapp.tar.gz)
+   * Copying the new tarball to the releases folder (ie. releases/relapp-1.0.12.tar.gz)
    * Issue the upgrade/downgrade command
 
 In the case of the example release upgrading from 1.0.11 to 1.0.12:
 
     $ cd <live_release_dir>
-    $ mkdir releases/1.0.12
-    $ cp relapp-1.0.12.tar.gz releases/1.0.12/relapp.tar.gz
+    $ cp relapp-1.0.12.tar.gz releases
     $ bin/relapp upgrade 1.0.12
 
 ## Soft vs Brutal purge
@@ -73,3 +71,10 @@ A good example of this behaviour in practice is in [a test app commit](https://g
 ```
 
 Now what happens if we load a new version of `relapp_m1`? This is where the purge option comes into play, a `brutal_purge` will kill the gen server process, that might not be the ideal method since the supervisor's restart intensity could be reached, perhaps in this case a `soft_purge` should be chosen instead and then manually restart the gen server or supervisor tree. As a general rule it is best not to send functions across processes if this is to be avoided.
+
+As of ERTS version 9.0 this behaviour has been changed, according to the [erlang:check_process_code/3 doc](http://erlang.org/doc/man/erlang.html#check_process_code-3):
+```
+As of ERTS version 9.0, the check process code operation only checks for direct references to the code. Indirect references via funs will be ignored. If such funs exist and are used after a purge of the old code, an exception will be raised upon usage (same as the case when the fun is received by the process after the purge). 
+```
+This means that the release upgrade will go through with no error and only when the purged method is invoked will the process that referenced it crashes.
+
