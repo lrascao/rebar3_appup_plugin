@@ -124,7 +124,8 @@ tmp_filename() ->
 %% @spec find_app_info(_,_) -> any().
 find_app_info(Name, State) ->
     Apps = rebar_state:project_apps(State),
-    find_app_info1(Name, Apps).
+    Deps = rebar_state:all_deps(State),
+    find_app_info1(Name, Apps ++ Deps).
 
 %% @spec find_app_info1(_,maybe_improper_list()) -> any().
 find_app_info1(_Name, []) -> undefined;
