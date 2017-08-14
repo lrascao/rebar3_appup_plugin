@@ -513,12 +513,16 @@ invert_instruction([{apply, {supervisor, terminate_child, [Sup, Worker]}},
 %% @spec get_behavior([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> any().
 get_behavior(List) ->
     Attributes = proplists:get_value(attributes, List),
-    case {proplists:get_value(behavior, Attributes),
-          proplists:get_value(behaviour, Attributes)} of
-        {undefined, undefined} -> undefined;
-        {[B],  undefined} -> B;
-        {undefined,  [B]} -> B
+    case proplists:get_value(behavior, Attributes, []) ++
+         proplists:get_value(behaviour, Attributes, []) of
+        [] -> undefined;
+        Bs -> select_behaviour(lists:sort(Bs))
     end.
+
+select_behaviour([B]) -> B;
+%% apply the supervisor upgrade when a module is both it and application
+select_behaviour([application, supervisor]) -> supervisor.
+
 
 %% @spec is_code_change([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> 'code_change' | 'undefined'.
 is_code_change(List) ->
