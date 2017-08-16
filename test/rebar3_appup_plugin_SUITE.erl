@@ -48,7 +48,8 @@ groups() ->
          appup_src_extra_argument,
          appup_src_template_vars,
          appup_src_state_var_scripting,
-         add_supervisor_worker, remove_supervisor_worker]
+         add_supervisor_worker, remove_supervisor_worker,
+         multiple_behaviours]
      }].
 
 init_per_suite(Config) ->
@@ -667,6 +668,34 @@ remove_supervisor_worker(Config) when is_list(Config) ->
                                {update, relapp_sup, supervisor},
                                {apply, {supervisor, restart_child,
                                   [relapp_sup, relapp_srv3]}}]
+                           },
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
+
+multiple_behaviours(doc) -> ["Support upgrades of module that implement multiple behaviours"];
+multiple_behaviours(suite) -> [];
+multiple_behaviours(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "0"} =
+                              sh("./bin/relapp eval "
+                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports))\"",
+                                    [], DeployDir),
+                            State
+                        end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, "undefined"} =
+                              sh("./bin/relapp eval "
+                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports))\"",
+                                    [], DeployDir),
+                            State
+                      end,
+    ok = upgrade_downgrade("relapp1", "1.0.26", "1.0.27",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                                [{update,relapp_app_sup,supervisor}],
+                                [{update,relapp_app_sup,supervisor}]
                            },
                            [{delete_appup_src, true}],
                            Config),
