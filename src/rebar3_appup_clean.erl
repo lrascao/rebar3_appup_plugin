@@ -62,6 +62,8 @@ do(State) ->
                                 TargetDir, ".appup",
                                 "", "",
                                 fun(Source, _Target, _Config) ->
+                                    rebar_api:debug("deleting ~s",
+                                        [filename:basename(Source)]),
                                     rebar_file_utils:delete_each([Source])
                                 end)
     end, Apps),

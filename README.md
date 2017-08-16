@@ -5,11 +5,21 @@ rebar3 appup plugin
 [![hex.pm version](https://img.shields.io/hexpm/v/rebar3_appup_plugin.svg)](https://hex.pm/packages/rebar3_appup_plugin)
 [![gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/rebar3-appup-plugin/Lobby?utm_source=share-link&utm_medium=link&utm_campaign=share-link)
 
-A rebar3 plugin for handling `.appup` files. Contains the instructions necessary to upgrade from one release to another. Supports the following features:
+A rebar3 plugin for handling release upgrades. Supports the following features:
    * Automatic generation of the `.appup` file containing instructions necessary to upgrade and downgrade from one release to the other. [More info](doc/UPGRADE_DOWNGRADE.md)
    * Validation of any `.appup.src` files that might be present, these are scripts that can contain Erlang code. They are templated, evaluated and their results and written to an `.appup` file that is then moved to the target dir. [More info](doc/APPUP_SRC.md)
    * Automatic code injection for `gen_server` state record conversion between versions. [More info](doc/STATE_RECORD_CONVERSION.md)
    * Automatically generated module dependencies. [More info](doc/MODULE_DEPENDENCIES.md)
+
+Demo
+-----
+### Generating a release upgrade
+
+![gif](http://i.imgur.com/zdfAg6o.gif)
+
+### Upgrading a release
+
+![gif](http://i.imgur.com/khWaee2.gif)
 
 Build
 -----
