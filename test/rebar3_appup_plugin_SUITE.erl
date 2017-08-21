@@ -49,7 +49,8 @@ groups() ->
          appup_src_template_vars,
          appup_src_state_var_scripting,
          add_supervisor_worker, remove_supervisor_worker,
-         multiple_behaviours]
+         multiple_behaviours,
+         custom_application_appup]
      }].
 
 init_per_suite(Config) ->
@@ -697,6 +698,26 @@ multiple_behaviours(Config) when is_list(Config) ->
                                 [{update,relapp_app_sup,supervisor}],
                                 [{update,relapp_app_sup,supervisor}]
                            },
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
+
+custom_application_appup(doc) -> ["Use a custom appup maintained in the application for defining upgrade "
+                                  " instructions for a dependency"];
+custom_application_appup(suite) -> [];
+custom_application_appup(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, "0.5.2"} = get_app_version("statsderl", DeployDir),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, "0.3.5"} = get_app_version("statsderl", DeployDir),
+                            State
+                        end,
+    ok = upgrade_downgrade("relapp1", "1.0.24", "1.0.25",
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {[], []},
                            [{delete_appup_src, true}],
                            Config),
     ok.

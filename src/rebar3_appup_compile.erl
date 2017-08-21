@@ -54,34 +54,9 @@ do(State) ->
             AppInfo ->
                 [AppInfo]
            end,
+    %% find all .appup.src files in all project applications
     lists:foreach(fun(AppInfo) ->
-                    Source0 = appup_file_src(AppInfo),
-                    case filelib:is_file(Source0) of
-                        true ->
-                            rebar_api:info("Compiling ~s",
-                                [filename:basename(Source0)]),
-                            Target = appup_file_target(AppInfo),
-                            case template(Source0, AppInfo) of
-                                {ok, AppUpBin} ->
-                                    %% allocate a temporary file and write the templated
-                                    %% contents to it
-                                    AppUpFile = rebar3_appup_utils:tmp_filename(),
-                                    ok = file:write_file(AppUpFile, AppUpBin),
-                                    case evaluate(AppUpFile, State) of
-                                        {ok, AppupTerm} ->
-                                            compile(AppupTerm, Target);
-                                        {error, Reason} ->
-                                            rebar_api:abort("failed to evaluate ~s (template ~p): ~p",
-                                                [AppUpFile, Source0, Reason])
-                                    end,
-                                    %% leave no trash behind
-                                    ok = file:delete(AppUpFile);
-                                {error, Reason} ->
-                                    rebar_api:abort("unable to render template due to ~p",
-                                        [Reason])
-                            end;
-                        false -> ok
-                    end
+                    process_app(AppInfo, State)
                   end, Apps),
     {ok, State}.
 
@@ -93,6 +68,49 @@ format_error(Reason) ->
 %% ===================================================================
 %% Private API
 %% ===================================================================
+
+process_app(AppInfo, State) ->
+    Sources = find_appup_src_files(AppInfo),
+    lists:foreach(fun(Source) ->
+                    case filelib:is_file(Source) of
+                        true ->
+                            %% this appup.src might pertain to some other
+                            %% application dependency, check for that
+                            Name = list_to_binary(filename:basename(Source, ".appup.src")),
+                            %% fetch this app deps
+                            AppDeps = dict:fetch({parsed_deps,default},
+                                                 rebar_state:opts(State)),
+                            SourceAppInfo = rebar3_appup_utils:find_app_info(Name,
+                                                                             rebar_state:all_deps(State, AppDeps)),
+                            process_appup_src(Source, SourceAppInfo, State);
+                        false -> ok
+                    end
+                  end, Sources).
+
+process_appup_src(Source, AppInfo, State) ->
+    Target = appup_file_target(AppInfo),
+    rebar_api:info("Compiling ~s to ~s",
+        [filename:basename(Source), Target]),
+    case template(Source, AppInfo) of
+        {ok, AppUpBin} ->
+            %% allocate a temporary file and write the templated
+            %% contents to it
+            AppUpFile = rebar3_appup_utils:tmp_filename(),
+            ok = file:write_file(AppUpFile, AppUpBin),
+            case evaluate(AppUpFile, State) of
+                {ok, AppupTerm} ->
+                    compile(AppupTerm, Target);
+                {error, Reason} ->
+                    rebar_api:abort("failed to evaluate ~s (template ~p): ~p",
+                        [AppUpFile, Source, Reason])
+            end,
+            %% leave no trash behind
+            ok = file:delete(AppUpFile);
+        {error, Reason} ->
+            rebar_api:abort("unable to render template due to ~p",
+                [Reason])
+    end.
+
 -type bs_vars() :: [{term(), term()}].
 -spec bs(bs_vars()) -> bs_vars().
 %% @spec bs(bs_vars()) -> bs_vars().
@@ -135,11 +153,12 @@ compile(AppupTerm, Target) ->
                 [AppupTerm])
     end.
 
-%% @spec appup_file_src(_) -> binary() | string().
-appup_file_src(AppInfo) ->
+%% @spec find_appup_src_files(_) -> binary() | string().
+find_appup_src_files(AppInfo) ->
     Dir = rebar_app_info:dir(AppInfo),
-    Name = rebar_app_info:name(AppInfo),
-    filename:join([Dir, "src", ec_cnv:to_list(Name) ++ ".appup.src"]).
+    %% find all *.appup.src files in the application
+    %% source directory
+    filelib:wildcard(Dir ++ "/src/*.appup.src").
 
 %% @spec appup_file_target(_) -> binary() | string().
 appup_file_target(AppInfo) ->
