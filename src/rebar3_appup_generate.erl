@@ -421,7 +421,7 @@ write_appup(App, OldVer, NewVer, TargetDir,
                                     io_lib:fwrite("~.9p", [UpgradeInstructions])},
                                 {"downgrade_instructions",
                                     io_lib:fwrite("~.9p", [DowngradeInstructions])}],
-                    AppUp = bbmustache:render(AppupTemplate, AppupCtx),
+                    AppUp = bbmustache:render(AppupTemplate, AppupCtx, [{escape_fun, fun(X) -> X end}]),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
                         [OldVer, NewVer, App, AppUpFile]),
                     ok = file:write_file(AppUpFile, AppUp)
