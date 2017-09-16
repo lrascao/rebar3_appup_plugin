@@ -50,7 +50,8 @@ groups() ->
          appup_src_state_var_scripting,
          add_supervisor_worker, remove_supervisor_worker,
          multiple_behaviours,
-         custom_application_appup]
+         custom_application_appup,
+         capital_named_modules]
      }].
 
 init_per_suite(Config) ->
@@ -718,6 +719,17 @@ custom_application_appup(Config) when is_list(Config) ->
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {[], []},
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
+
+capital_named_modules(doc) -> ["Generate an appup for a release containing a module with capital name"];
+capital_named_modules(suite) -> [];
+capital_named_modules(Config) when is_list(Config) ->
+    ok = upgrade_downgrade("relapp1", "1.0.27", "1.0.28",
+                           [],
+                           {[{add_module, 'RELAPP-CAPITAL-TEST_m2', []}],
+                            [{delete_module, 'RELAPP-CAPITAL-TEST_m2'}]},
                            [{delete_appup_src, true}],
                            Config),
     ok.
