@@ -126,7 +126,7 @@ do(State) ->
                       [CurrentName, PreviousName]),
 
     %% Find all the apps that have been upgraded
-    {AddApps, UpgradeApps0, RemoveApps} = get_apps(Name,
+    {AddApps0, UpgradeApps0, RemoveApps} = get_apps(Name,
                                                    PreviousRelPath, PreviousVer,
                                                    CurrentRelPath, CurrentVer,
                                                    State),
@@ -141,7 +141,8 @@ do(State) ->
         [CurrentAppUpApps]),
 
     %% Create a list of apps that don't already have appups
-    UpgradeApps = gen_appup_which_apps(UpgradeApps0, CurrentAppUpApps),
+    UpgradeApps = gen_appup_which_apps(UpgradeApps0 ++ AddApps0, CurrentAppUpApps),
+    AddApps = gen_appup_which_apps(AddApps0, CurrentAppUpApps),
     rebar_api:debug("generating .appup for apps: ~p",
         [AddApps ++ UpgradeApps ++ RemoveApps]),
 
@@ -269,7 +270,7 @@ file_to_name(File) ->
 
 %% @spec gen_appup_which_apps([any()],[string()]) -> [any()].
 gen_appup_which_apps(UpgradedApps, [First|Rest]) ->
-    List = proplists:delete(list_to_atom(First), UpgradedApps),
+    List = lists:keydelete(list_to_atom(First), 2, UpgradedApps),
     gen_appup_which_apps(List, Rest);
 gen_appup_which_apps(Apps, []) ->
     Apps.
@@ -421,7 +422,7 @@ write_appup(App, OldVer, NewVer, TargetDir,
                                     io_lib:fwrite("~.9p", [UpgradeInstructions])},
                                 {"downgrade_instructions",
                                     io_lib:fwrite("~.9p", [DowngradeInstructions])}],
-                    AppUp = bbmustache:render(AppupTemplate, AppupCtx),
+                    AppUp = bbmustache:render(AppupTemplate, AppupCtx, [{escape_fun, fun(X) -> X end}]),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
                         [OldVer, NewVer, App, AppUpFile]),
                     ok = file:write_file(AppUpFile, AppUp)
