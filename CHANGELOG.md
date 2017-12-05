@@ -4,6 +4,15 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.3.0] - 05-12-2017
+### Added
+    * [Add support for appup.src dependency overrides](https://github.com/lrascao/rebar3_appup_utils/pull/19)
+### Changed
+    * [Bump bbmustache to 1.5.0](https://github.com/lrascao/rebar3_appup_utils/pull/18)
+### Fixed
+    * [Fix/capital name modules](https://github.com/lrascao/rebar3_appup_utils/pull/21)
+    * [Properly check appup existence before generating](https://github.com/lrascao/rebar3_appup_utils/pull/25)
+
 ## [2.2.1] - 16-08-2017
 ### Added
     * Add debug on clean operation

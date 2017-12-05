@@ -25,7 +25,8 @@ endif
 
 .PHONY: all compile clean dialyzer test
 
-travis: test
+travis: update test
+
 all: deps compile
 
 # =============================================================================
@@ -44,6 +45,9 @@ compile: $(REBAR3)
 
 clean: $(REBAR3)
 	- $(REBAR3) clean
+
+update:
+	$(REBAR3) update
 
 test: compile
 	rm -rf _build/test
