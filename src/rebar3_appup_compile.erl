@@ -77,11 +77,7 @@ process_app(AppInfo, State) ->
                             %% this appup.src might pertain to some other
                             %% application dependency, check for that
                             Name = list_to_binary(filename:basename(Source, ".appup.src")),
-                            %% fetch this app deps
-                            AppDeps = dict:fetch({parsed_deps,default},
-                                                 rebar_state:opts(State)),
-                            SourceAppInfo = rebar3_appup_utils:find_app_info(Name,
-                                                                             rebar_state:all_deps(State, AppDeps)),
+                            SourceAppInfo = rebar3_appup_utils:find_app_info(Name, State),
                             process_appup_src(Source, SourceAppInfo, State);
                         false -> ok
                     end
