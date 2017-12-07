@@ -298,8 +298,10 @@ generate_appup_files(TargetDir,
     NewRelEbinDir = filename:join([NewVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ NewVer, "ebin"]),
 
-    {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
+    {AddedFiles, DeletedFiles, ChangedFiles0} = beam_lib:cmp_dirs(NewRelEbinDir,
                                                                  OldRelEbinDir),
+    ChangedFiles = filter_abst_chunks_different(ChangedFiles0),
+
     rebar_api:debug("beam files:", []),
     rebar_api:debug("   added: ~p", [AddedFiles]),
     rebar_api:debug("   deleted: ~p", [DeletedFiles]),
@@ -663,3 +665,19 @@ generate_tuple(7) -> {undefined, undefined, undefined, undefined,
                       undefined, undefined, undefined};
 generate_tuple(8) -> {undefined, undefined, undefined, undefined,
                       undefined, undefined, undefined, undefined}.
+
+filter_abst_chunks_different(ChangedFiles) ->
+    case beam_lib:get_crypto_key({debug_info, des3_cbc, none, none}) of
+        error -> %% skip
+            ChangedFiles;
+        _ ->
+            lists:foldl(
+                fun({NewFile, OldFile} = ChangedFile, List) ->
+                    case beam_lib:cmp(NewFile, OldFile) of
+                        {error, beam_lib, {chunks_different, "Abst"}} -> %% skip
+                            List;
+                        _ ->
+                            [ChangedFile | List]
+                    end
+                end, [], ChangedFiles)
+    end.
