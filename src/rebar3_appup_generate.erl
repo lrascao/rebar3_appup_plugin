@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%% ex: ts=4 sw=4 et
 %% -------------------------------------------------------------------
 %%
 %% Copyright (c) 2016 Luis Rascão.  All Rights Reserved.
@@ -22,6 +24,10 @@
 -export([init/1,
          do/1,
          format_error/1]).
+
+%% exported for eunit
+-export([matching_versions/2,
+         merge_instructions/6]).
 
 -define(PROVIDER, generate).
 -define(DEPS, []).
@@ -81,19 +87,11 @@ do(State) ->
     PluginInfo = rebar3_appup_utils:appup_plugin_appinfo(Apps),
     PluginDir = rebar_app_info:dir(PluginInfo),
 
-    RelxConfig = rebar_state:get(State, relx, []),
-    {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
-    Name = atom_to_list(Name0),
+    Name = get_release_name(State),
     rebar_api:debug("release name: ~p", [Name]),
 
     %% check for overload of the current release
-    CurrentRelPath = case proplists:get_value(current, Opts, undefined) of
-                        undefined ->
-                            filename:join([rebar_dir:base_dir(State),
-                                           ?DEFAULT_RELEASE_DIR,
-                                           Name]);
-                        Path -> Path
-                     end,
+    CurrentRelPath = get_current_rel_path(State, Name),
     %% extract the current release data
     {CurrentName, CurrentVer} = rebar3_appup_rel_utils:get_rel_release_info(
                                             Name, CurrentRelPath),
@@ -291,7 +289,7 @@ generate_appup_files(TargetDir,
     UpgradeInstructions = [{add_application, App, permanent}],
     DowngradeInstructions = lists:reverse(lists:map(fun invert_instruction/1,
                                                     UpgradeInstructions)),
-    ok = write_appup(App, <<".*">>, Version, TargetDir,
+    ok = write_appup(App, ".*", Version, TargetDir,
                      UpgradeInstructions, DowngradeInstructions,
                      Opts, State),
     ok;
@@ -355,6 +353,7 @@ module_dependencies(Files) ->
     %% start off xref
     {ok, _} = xref:start(xref),
     %% add each of the directories to the xref path
+
     lists:foreach(fun(Dir) ->
                     {ok, _} = xref:add_directory(xref, Dir)
                   end, Dirs),
@@ -377,7 +376,7 @@ module_dependencies([Mod | Rest], Mods, Acc) ->
 
 %% @spec write_appup(atom(),_,_,atom() | binary() | [atom() | [any()] | char()],[any()],[{'add_module',_} | {'apply',{_,_,_}} | {'delete_module',_} | {'remove_application',_} | {'add_application',_,'permanent'} | {'update',_,'supervisor'} | {'load_module',_,_,_,_} | {'update',_,{_,_},_,_,_}],[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
 write_appup(App, OldVer, NewVer, TargetDir,
-            UpgradeInstructions, DowngradeInstructions,
+            UpgradeInstructions0, DowngradeInstructions0,
             Opts, State) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     %% check for the app either in deps or lib
@@ -416,6 +415,25 @@ write_appup(App, OldVer, NewVer, TargetDir,
                         [filename:join([TargetDir, atom_to_list(App) ++ ".appup"])]
                  end,
 
+    rebar_api:debug(
+        "Upgrade instructions before merging with .appup.pre.src and "
+        ".appup.post.src files: ~p",
+        [UpgradeInstructions0]),
+    rebar_api:debug(
+        "Downgrade instructions before merging with .appup.pre.src and "
+        ".appup.post.src files: ~p",
+        [DowngradeInstructions0]),
+    {UpgradeInstructions, DowngradeInstructions} =
+        merge_instructions(AppUpFiles, UpgradeInstructions0, DowngradeInstructions0, OldVer, NewVer),
+    rebar_api:debug(
+        "Upgrade instructions after merging with .appup.pre.src and "
+        ".appup.post.src files:\n~p\n",
+        [UpgradeInstructions]),
+    rebar_api:debug(
+        "Downgrade instructions after merging with .appup.pre.src and "
+        ".appup.post.src files:\n~p\n",
+        [DowngradeInstructions]),
+
     {ok, AppupTemplate} = file:read_file(filename:join([proplists:get_value(plugin_dir, Opts),
                                                         ?PRIV_DIR, ?APPUP_TEMPLATE])),
     %% write each of the .appup files
@@ -428,7 +446,8 @@ write_appup(App, OldVer, NewVer, TargetDir,
                                     io_lib:fwrite("~.9p", [UpgradeInstructions])},
                                 {"downgrade_instructions",
                                     io_lib:fwrite("~.9p", [DowngradeInstructions])}],
-                    AppUp = bbmustache:render(AppupTemplate, AppupCtx, [{escape_fun, fun(X) -> X end}]),
+                    EscFun = fun(X) -> X end,
+                    AppUp = bbmustache:render(AppupTemplate, AppupCtx, [{escape_fun, EscFun}]),
                     rebar_api:info("Generated appup (~p <-> ~p) for ~p in ~p",
                         [OldVer, NewVer, App, AppUpFile]),
                     ok = file:write_file(AppUpFile, AppUp)
@@ -684,3 +703,246 @@ generate_tuple(7) -> {undefined, undefined, undefined, undefined,
                       undefined, undefined, undefined};
 generate_tuple(8) -> {undefined, undefined, undefined, undefined,
                       undefined, undefined, undefined, undefined}.
+
+-spec get_current_rel_path(State, Name) -> Res when
+      State :: rebar_state:t(),
+      Name :: string(),
+      Res :: list().
+get_current_rel_path(State, Name) ->
+    {Opts, _} = rebar_state:command_parsed_args(State),
+    case proplists:get_value(current, Opts, undefined) of
+        undefined ->
+            filename:join([rebar_dir:base_dir(State),
+                           ?DEFAULT_RELEASE_DIR,
+                           Name]);
+        Path -> Path
+    end.
+
+-spec get_release_name(State) -> Res when
+      State :: rebar_state:t(),
+      Res :: string().
+get_release_name(State) ->
+    RelxConfig = rebar_state:get(State, relx, []),
+    {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
+    atom_to_list(Name0).
+
+%%------------------------------------------------------------------------------
+%%
+%% Add pre and post instructions to the instuctions created by appup generate.
+%% These instructions must be stored in the .appup.pre.src and .appup.post.src
+%% files in the src folders of the given application.
+%%
+%% If one of these files are missing or the version patterns specified in
+%% these files don't match the current old and new versions stored in the
+%% .appup file the corresponding part will be empty.
+%%
+%% Example:
+%%
+%% Generated relapp.appup
+%% %% appup generated for relapp by rebar3_appup_plugin (2018/01/10 14:35:19)
+%% {"1.0.34",
+%%   [{ "1.0.33",
+%%     [{apply,{io,format,["Upgrading is in progress..."]}}]}],
+%%   [{ "1.0.33",
+%%     [{apply,{io,format,["Downgrading is in progress..."]}}]}],
+%% }.
+%%
+%% relapp.appup.pre.src:
+%%
+%% {"1.0.34",
+%%   [{"1.*",
+%%      [{apply, {io, format, ["Upgrading started from 1.* to 1.0.34"]}}]},
+%%    {"1.0.33",
+%%      [{apply, {io, format, ["Upgrading started from 1.0.33 to 1.0.34"]}}]}],
+%%   [{".*",
+%%     [{apply, {io, format, ["Downgrading started from 1.0.34 to .*"]}}]},
+%%    {"1.0.33",
+%%     [{apply, {io, format, ["Downgrading started from 1.0.34 to 1.0.33"]}}]}]
+%% }.
+%%
+%% relapp.appup.post.src:
+%%
+%% {"1.0.34",
+%%   [{"1.*",
+%%      [{apply, {io, format, ["Upgrading finished from 1.* to 1.0.34"]}}]},
+%%    {"1.0.33",
+%%      [{apply, {io, format, ["Upgrading finished from 1.0.33 to 1.0.34"]}}]}],
+%%   [{".*",
+%%      [{apply, {io, format, ["Downgrading finished from 1.0.034 to .*"]}}]},
+%%    {"1.0.33",
+%%      [{apply, {io, format, ["Downgrading finished from 1.0.34 to 1.0.33"]}}]}]
+%% }.
+%%
+%% The final relapp.appup file after merging the pre and post contents:
+%%
+%% %% appup generated for relapp by rebar3_appup_plugin (2018/01/10 14:35:19)
+%% {"1.0.34",
+%%   [{"1.0.33",
+%%     [{apply,{io,format,["Upgrading started from 1.* to 1.0.34"]}},
+%%      {apply,{io,format,["Upgrading started from 1.0.33 to 1.0.34"]}},
+%%      {apply,{io,format,["Upgrading is in progress..."]}},
+%%      {apply,{io,format,["Upgrading finished from 1.* to 1.0.34"]}},
+%%      {apply,{io,format,["Upgrading finished from 1.0.33 to 1.0.34"]}}] }],
+%%   [{"1.0.33",
+%%     [{apply,{io,format,["Downgrading started from 1.0.34 to .*"]}},
+%%      {apply,{io,format,["Downgrading started from 1.0.34 to 1.0.33"]}},
+%%      {apply,{io,format,["Downgrading is in progress..."]}},
+%%      {apply,{io,format,["Downgrading finished from 1.0.34 to .*"]}},
+%%      {apply,{io,format,["Downgrading finished from 1.0.34 to 1.0.33"]}}] }]
+%% }.
+%%
+%%------------------------------------------------------------------------------
+-spec merge_instructions(AppupFiles, UpgradeInstructions, DowngradeInstructions,
+                         OldVer, NewVer) -> Res when
+      AppupFiles :: [] | [string()],
+      UpgradeInstructions :: list(tuple()),
+      DowngradeInstructions :: list(tuple()),
+      OldVer :: string(),
+      NewVer :: string(),
+      Res :: {list(tuple()), list(tuple())}.
+merge_instructions([] = _AppupFiles, UpgradeInstructions, DowngradeInstructions,
+                   _OldVer, _NewVer) ->
+    {UpgradeInstructions, DowngradeInstructions};
+merge_instructions([AppUpFile], UpgradeInstructions, DowngradeInstructions,
+                   OldVer, NewVer) ->
+    [_, _ | AppRootDir0] = lists:reverse(string:tokens(AppUpFile, "/")),
+    AppRootDir = filename:join(["/" | lists:reverse(AppRootDir0)]),
+    AppupPrePath = find_file_by_ext(AppRootDir, ".appup.pre.src"),
+    AppupPostPath = find_file_by_ext(AppRootDir, ".appup.post.src"),
+    rebar_api:debug(".appup.pre.src path: ~p",
+                    [AppupPrePath]),
+    rebar_api:debug("appup.post.src path: ~p",
+                    [AppupPostPath]),
+    PreContents = read_pre_post_contents(AppupPrePath),
+    PostContents = read_pre_post_contents(AppupPostPath),
+    rebar_api:debug(".appup.pre.src contents: ~p",
+                    [PreContents]),
+    rebar_api:debug(".appup.post.src contents: ~p",
+                    [PostContents]),
+    merge_instructions(PreContents, PostContents, OldVer, NewVer,
+                        UpgradeInstructions, DowngradeInstructions).
+
+-spec merge_instructions(PreContents, PostContents, OldVer, NewVer,
+                          UpgradeInstructions, DowngradeInstructions) -> Res when
+      PreContents :: undefined | {string(), list(), list()},
+      PostContents :: undefined | {string(), list(), list()},
+      OldVer :: string(),
+      NewVer :: string(),
+      UpgradeInstructions :: list(tuple()),
+      DowngradeInstructions :: list(tuple()),
+      Res :: {list(tuple()), list(tuple())}.
+merge_instructions(PreContents, PostContents, OldVer, NewVer,
+                    UpgradeInstructions, DowngradeInstructions) ->
+    {merge_pre_post_instructions(PreContents, PostContents, upgrade, OldVer,
+                                 NewVer, UpgradeInstructions),
+     merge_pre_post_instructions(PreContents, PostContents, downgrade, OldVer,
+                                 NewVer, DowngradeInstructions)}.
+
+-spec merge_pre_post_instructions(PreContents, PostContents, Direction, OldVer,
+                                  NewVer, Instructions) -> Res when
+      PreContents :: undefined | {string(), list(), list()},
+      PostContents :: undefined | {string(), list(), list()},
+      Direction :: upgrade | downgrade,
+      OldVer :: string(),
+      NewVer :: string(),
+      Instructions :: list(tuple()),
+      Res :: list(tuple()).
+merge_pre_post_instructions(PreContents, PostContents, Direction, OldVer,
+                            NewVer, Instructions) ->
+    expand_instructions(PreContents, Direction, OldVer, NewVer) ++
+    Instructions ++
+    expand_instructions(PostContents, Direction, OldVer, NewVer).
+
+-spec read_pre_post_contents(Path) -> Res when
+      Path :: undefined | string(),
+      Res :: undefined | tuple().
+read_pre_post_contents(undefined) ->
+    undefined;
+read_pre_post_contents(Path) ->
+    {ok, [Contents]} = file:consult(Path),
+    Contents.
+
+-spec expand_instructions(ExtFileContents, Direction, OldVer, NewVer) ->
+    Res when
+      ExtFileContents :: undefined | {string(), list(), list()},
+      Direction :: upgrade | downgrade,
+      OldVer :: string(),
+      NewVer :: string(),
+      Res :: list(tuple()).
+expand_instructions(undefined, _Direction, _OldVer, _NewVer) ->
+    [];
+expand_instructions({VersionPattern, UpInsts, DownInsts}, Direction, OldVer,
+                    NewVer) ->
+    case matching_versions(VersionPattern, NewVer) of
+        true ->
+            Instructions = case Direction of
+                               upgrade -> UpInsts;
+                               downgrade -> DownInsts
+                           end,
+            expand_instructions(Instructions, OldVer, []);
+        false ->
+            []
+    end.
+
+%%------------------------------------------------------------------------------
+%% Check if pattern in the first parameter matches the given version.
+%% matching_versions("1.*", "1.0.34") -> true
+%% matching_versions(".*", "1.0.34") -> true
+%%------------------------------------------------------------------------------
+-spec matching_versions(Pattern, Version) -> Res when
+      Pattern :: string(),
+      Version :: string(),
+      Res :: boolean().
+matching_versions(Pattern, Version) ->
+    PatternParts = string:tokens(Pattern, "."),
+    PatternParts1 = expand_pattern_parts(PatternParts, []),
+    VersionParts = string:tokens(Version, "."),
+    Res = is_matching_versions(PatternParts1, VersionParts),
+    rebar_api:debug("Checking if pattern '~s' matches version '~s': ~p",
+                    [Pattern, Version, Res]),
+    Res.
+
+is_matching_versions([], _) ->
+    true;
+is_matching_versions(["*" | PatternParts], [_ | VersionParts]) ->
+    is_matching_versions(PatternParts, VersionParts);
+is_matching_versions([PatternPart | PatternTail], [VersionPart | VersionTail])
+  when PatternPart =:= VersionPart ->
+    is_matching_versions(PatternTail, VersionTail);
+is_matching_versions(_PatternParts, _VersionParts) ->
+    false.
+
+-spec expand_pattern_parts(Parts, Acc) -> Res when
+      Parts :: list(string()),
+      Acc :: list(string()),
+      Res :: list(string()).
+expand_pattern_parts([], Acc) ->
+    lists:reverse(Acc);
+expand_pattern_parts([P | T], Acc) when P =:= "*"; P =:= "" ->
+    expand_pattern_parts(T, ["*" | Acc]);
+expand_pattern_parts([P | T], Acc) ->
+    expand_pattern_parts(T, [P | Acc]).
+
+-spec expand_instructions(Instructions, Version, Acc) -> Res when
+      Instructions :: list({string(), list(tuple())}),
+      Version :: string(),
+      Acc :: list(tuple()),
+      Res :: list(tuple()).
+expand_instructions([], _OldVersion, Acc) ->
+    Acc;
+expand_instructions([{Pattern, Insts} | T], OldVersion, Acc0) ->
+    Acc = case matching_versions(Pattern, OldVersion) of
+              true ->
+                  Acc0 ++ Insts;
+              false ->
+                  Acc0
+          end,
+    expand_instructions(T, OldVersion, Acc).
+
+find_file_by_ext(Dir, Ext) ->
+    case rebar3_appup_utils:find_files_by_ext(Dir, Ext) of
+        [] ->
+            undefined;
+        [Path] ->
+            Path
+    end.
