@@ -63,8 +63,8 @@ init_per_suite(Config) ->
     % log("suite config: ~p\n", [SuiteConfig]),
     % log("src dir: ~p\n", [SrcDir]),
     Apps = proplists:get_value(apps, SuiteConfig),
-    lists:foreach(fun({App, GitUrl}) ->
-                    git_clone(GitUrl, App, DataDir),
+    lists:foreach(fun({App, GitUrl, Branch}) ->
+                    git_clone(App, GitUrl, Branch, DataDir),
                     {ok, _} = sh(io_lib:format("rsync -a --exclude='_build' ~s .",
                                                [SrcDir]),
                                  [], DataDir),
@@ -102,7 +102,7 @@ end_per_testcase(_Func, Config) ->
     PrivDir = lookup_config(priv_dir, Config),
     SuiteConfig = ct:get_config(config),
     Apps = proplists:get_value(apps, SuiteConfig),
-    lists:foreach(fun({App, _}) ->
+    lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
                     {ok, _} = sh("rm -rf _build/default/lib/relapp/ebin/relapp.appup", [], Dir)
@@ -957,8 +957,8 @@ rebar3_command(Dir, Command, [debug]) ->
 git_checkout(Dir, Tag) ->
     sh("git checkout " ++ Tag, [], Dir).
 
-git_clone(Url, Name, Dir) ->
-    sh("git clone " ++ Url ++ " " ++ Name, [], Dir).
+git_clone(Name, Url, Branch, Dir) ->
+    sh("git clone -b " ++ Branch ++ " " ++ Url ++ " " ++ Name, [], Dir).
 
 get_cwd() ->
     {ok, Dir} = file:get_cwd(),
