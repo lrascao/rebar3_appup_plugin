@@ -33,6 +33,12 @@
 -define(DEFAULT_RELEASE_DIR, "rel").
 -define(DEFAULT_PRE_PURGE, brutal_purge).
 -define(DEFAULT_POST_PURGE, brutal_purge).
+-define(SUPPORTED_BEHAVIOURS, [gen_server,
+                               gen_fsm,
+                               gen_statem,
+                               gen_event,
+                               application,
+                               supervisor]).
 
 %% ===================================================================
 %% Public API
@@ -517,13 +523,28 @@ get_behavior(List) ->
     case proplists:get_value(behavior, Attributes, []) ++
          proplists:get_value(behaviour, Attributes, []) of
         [] -> undefined;
-        Bs -> select_behaviour(lists:sort(Bs))
+        Bs -> select_behaviour(
+                lists:sort(
+                  drop_unknown_behaviours(Bs)))
     end.
+
+drop_unknown_behaviours(Bs) ->
+    drop_unknown_behaviours(Bs, []).
+
+drop_unknown_behaviours([], Acc) -> Acc;
+drop_unknown_behaviours([B|Rest], Acc0) ->
+    Acc = case supported_behaviour(B) of
+            true -> [B|Acc0];
+            false -> Acc0
+          end,
+    drop_unknown_behaviours(Rest, Acc).
+
+supported_behaviour(B) ->
+    lists:member(B, ?SUPPORTED_BEHAVIOURS).
 
 select_behaviour([B]) -> B;
 %% apply the supervisor upgrade when a module is both it and application
 select_behaviour([application, supervisor]) -> supervisor.
-
 
 %% @spec is_code_change([{'abstract_code' | 'atoms' | 'attributes' | 'compile_info' | 'exports' | 'imports' | 'indexed_imports' | 'labeled_exports' | 'labeled_locals' | 'locals' | [any(),...],'no_abstract_code' | binary() | [any()] | {_,_}}]) -> 'code_change' | 'undefined'.
 is_code_change(List) ->
