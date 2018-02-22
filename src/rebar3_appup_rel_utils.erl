@@ -33,8 +33,8 @@ get_permanent_version(Path) ->
     DataFile = filename:join([Path, "releases", "start_erl.data"]),
     case file:read_file(DataFile) of
         {ok, DataBin} ->
-            [_, Version] = string:tokens(
-                             string:strip(binary_to_list(DataBin), right, $\n),
+            [_, Version] = string_compat:tokens(
+                             string_compat:strip(binary_to_list(DataBin), left, $\n),
                              " "),
             Version;
         {error, enoent} ->
