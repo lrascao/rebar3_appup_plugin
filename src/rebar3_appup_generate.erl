@@ -805,7 +805,7 @@ merge_instructions([] = _AppupFiles, UpgradeInstructions, DowngradeInstructions,
     {UpgradeInstructions, DowngradeInstructions};
 merge_instructions([AppUpFile], UpgradeInstructions, DowngradeInstructions,
                    OldVer, NewVer) ->
-    [_, _ | AppRootDir0] = lists:reverse(string:tokens(AppUpFile, "/")),
+    [_, _ | AppRootDir0] = lists:reverse(string_compat:tokens(AppUpFile, "/")),
     AppRootDir = filename:join(["/" | lists:reverse(AppRootDir0)]),
     AppupPrePath = find_file_by_ext(AppRootDir, ".appup.pre.src"),
     AppupPostPath = find_file_by_ext(AppRootDir, ".appup.post.src"),
@@ -894,9 +894,9 @@ expand_instructions({VersionPattern, UpInsts, DownInsts}, Direction, OldVer,
       Version :: string(),
       Res :: boolean().
 matching_versions(Pattern, Version) ->
-    PatternParts = string:tokens(Pattern, "."),
+    PatternParts = string_compat:tokens(Pattern, "."),
     PatternParts1 = expand_pattern_parts(PatternParts, []),
-    VersionParts = string:tokens(Version, "."),
+    VersionParts = string_compat:tokens(Version, "."),
     Res = is_matching_versions(PatternParts1, VersionParts),
     rebar_api:debug("Checking if pattern '~s' matches version '~s': ~p",
                     [Pattern, Version, Res]),
