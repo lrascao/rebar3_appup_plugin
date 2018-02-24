@@ -34,7 +34,7 @@ get_permanent_version(Path) ->
     case file:read_file(DataFile) of
         {ok, DataBin} ->
             [_, Version] = string_compat:tokens(
-                             string_compat:strip(binary_to_list(DataBin), left, $\n),
+                             string_compat:strip(binary_to_list(DataBin), right, $\n),
                              " "),
             Version;
         {error, enoent} ->
