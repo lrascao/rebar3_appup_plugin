@@ -8,6 +8,7 @@ rebar3 appup plugin
 A rebar3 plugin for handling release upgrades. Supports the following features:
    * Automatic generation of the `.appup` file containing instructions necessary to upgrade and downgrade from one release to the other. [More info](doc/UPGRADE_DOWNGRADE.md)
    * Validation of any `.appup.src` files that might be present, these are scripts that can contain Erlang code. They are templated, evaluated and their results and written to an `.appup` file that is then moved to the target dir. [More info](doc/APPUP_SRC.md)
+   * Handles any dependency `.appup.src` files maintained by your application. [More info](doc/CUSTOM_APPUP.md)
    * Automatic code injection for `gen_server` state record conversion between versions. [More info](doc/STATE_RECORD_CONVERSION.md)
    * Automatically generated module dependencies. [More info](doc/MODULE_DEPENDENCIES.md)
 

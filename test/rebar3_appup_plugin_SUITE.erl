@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(rebar3_appup_plugin_SUITE).
--compile([export_all]).
+-compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 
@@ -31,27 +31,30 @@ all() ->
 
 groups() ->
     [{generate, [],
-        [empty_appup, supervisor_appup,
-         new_gen_server_appup,
-         new_gen_server_state_appup,
-         add_fields_gen_server_state_appup,
-         add_field_middle_gen_server_state_appup,
-         replace_field_middle_gen_server_state_appup,
-         new_dependency_appup,
-         remove_dependency_appup,
-         restore_dependency_appup,
-         new_auto_gen_server_appup,
-         add_fields_auto_gen_server_state_appup,
-         new_simple_module, simple_module_use,
-         brutal_purge_test, soft_purge_test,
-         appup_src_scripting,
-         appup_src_extra_argument,
-         appup_src_template_vars,
-         appup_src_state_var_scripting,
-         add_supervisor_worker, remove_supervisor_worker,
-         multiple_behaviours,
-         custom_application_appup,
-         capital_named_modules]
+        [
+          empty_appup, supervisor_appup,
+          new_gen_server_appup,
+          new_gen_server_state_appup,
+          add_fields_gen_server_state_appup,
+          add_field_middle_gen_server_state_appup,
+          replace_field_middle_gen_server_state_appup,
+          new_dependency_appup,
+          remove_dependency_appup,
+          restore_dependency_appup,
+          new_auto_gen_server_appup,
+          add_fields_auto_gen_server_state_appup,
+          new_simple_module, simple_module_use,
+          brutal_purge_test, soft_purge_test,
+          appup_src_scripting,
+          appup_src_extra_argument,
+          appup_src_template_vars,
+          appup_src_state_var_scripting,
+          add_supervisor_worker, remove_supervisor_worker,
+          multiple_behaviours,
+          custom_application_appup,
+          capital_named_modules,
+          post_pre_generate
+        ]
      }].
 
 init_per_suite(Config) ->
@@ -63,8 +66,8 @@ init_per_suite(Config) ->
     % log("suite config: ~p\n", [SuiteConfig]),
     % log("src dir: ~p\n", [SrcDir]),
     Apps = proplists:get_value(apps, SuiteConfig),
-    lists:foreach(fun({App, GitUrl}) ->
-                    git_clone(GitUrl, App, DataDir),
+    lists:foreach(fun({App, GitUrl, Branch}) ->
+                    git_clone(App, GitUrl, Branch, DataDir),
                     {ok, _} = sh(io_lib:format("rsync -a --exclude='_build' ~s .",
                                                [SrcDir]),
                                  [], DataDir),
@@ -102,7 +105,7 @@ end_per_testcase(_Func, Config) ->
     PrivDir = lookup_config(priv_dir, Config),
     SuiteConfig = ct:get_config(config),
     Apps = proplists:get_value(apps, SuiteConfig),
-    lists:foreach(fun({App, _}) ->
+    lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
                     {ok, _} = sh("rm -rf _build/default/lib/relapp/ebin/relapp.appup", [], Dir)
@@ -734,6 +737,24 @@ capital_named_modules(Config) when is_list(Config) ->
                            Config),
     ok.
 
+post_pre_generate(doc) -> ["generate post pre"];
+post_pre_generate(suite) -> [];
+post_pre_generate(Config) ->
+    ok = upgrade_downgrade(
+             "relapp1", "1.0.33", "1.0.34",
+             [],
+             {[{apply,{io,format,["Upgrading started from 1.* to 1.0.34"]}},
+               {apply,{io,format, ["Upgrading started from 1.0.33 to 1.0.34"]}},
+               {apply,{io,format, ["Upgrading finished from 1.* to 1.0.34"]}},
+               {apply,{io,format, ["Upgrading finished from 1.0.33 to 1.0.34"]}}],
+              [{apply,{io,format, ["Downgrading started from 1.0.34 to .*"]}},
+               {apply,{io,format, ["Downgrading started from 1.0.34 to 1.0.33"]}},
+               {apply,{io,format, ["Downgrading finished from 1.0.34 to .*"]}},
+               {apply,{io,format, ["Downgrading finished from 1.0.34 to 1.0.33"]}}]},
+             [{delete_appup_src, true}],
+             Config),
+  ok.
+
 %% -------------------------------------------------------------
 %% Private methods
 %% -------------------------------------------------------------
@@ -957,8 +978,8 @@ rebar3_command(Dir, Command, [debug]) ->
 git_checkout(Dir, Tag) ->
     sh("git checkout " ++ Tag, [], Dir).
 
-git_clone(Url, Name, Dir) ->
-    sh("git clone " ++ Url ++ " " ++ Name, [], Dir).
+git_clone(Name, Url, Branch, Dir) ->
+    sh("git clone -b " ++ Branch ++ " " ++ Url ++ " " ++ Name, [], Dir).
 
 get_cwd() ->
     {ok, Dir} = file:get_cwd(),
