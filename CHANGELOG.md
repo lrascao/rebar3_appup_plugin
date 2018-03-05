@@ -4,6 +4,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.1] - 05-03-2018
+### Added
+### Changed
+### Fixed
+    - Don't crash appup generation on unsupported behaviours
+
 ## [2.4.0] - 02-03-2018
 ### Added
     - [Merge .appup.pre.src & .appup.post.src files into the generated appup](https://github.com/lrascao/rebar3_appup_utils/pull/31)
