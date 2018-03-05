@@ -561,6 +561,7 @@ drop_unknown_behaviours([B|Rest], Acc0) ->
 supported_behaviour(B) ->
     lists:member(B, ?SUPPORTED_BEHAVIOURS).
 
+select_behaviour([]) -> undefined;
 select_behaviour([B]) -> B;
 %% apply the supervisor upgrade when a module is both it and application
 select_behaviour([application, supervisor]) -> supervisor.
