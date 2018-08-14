@@ -423,7 +423,7 @@ match_code_change_args([_, _, _]) ->
     {undefined, []}.
 
 % TODO - upply the code change line to the call
--spec apply_code_change_line(_, erl_parse:abstract_form()) -> erl_parse:abstract_form().
+-spec apply_code_change_line(_, erl_parse:abstract_form()) -> erl_parse:abstract_form() | [erl_parse:abstract_expr()].
 %% @spec apply_code_change_line(_,_) -> any().
 apply_code_change_line(_L, AbstConvertCall) -> AbstConvertCall.
 
@@ -456,10 +456,15 @@ inject_code_change_clause({clause, L, Args, [], Body0} = Clause, Opts) ->
                           {"extra_ret", ExtraRetStr}],
         ConvertCall = bbmustache:render(ConvertCallTemplate, ConvertCallCtx),
         AbstConvertCall = apply_code_change_line(L, to_abstract(binary_to_list(ConvertCall))),
-        {clause, L, NewArgs, [], AbstConvertCall ++ Body0}
+        case is_list(AbstConvertCall) of
+            true ->
+                {clause, L, NewArgs, [], AbstConvertCall ++ Body0};
+            false ->
+                {clause, L, NewArgs, [], [AbstConvertCall | Body0]}
+        end
     end.
 
--spec to_abstract(string()) -> erl_parse:abstract_form().
+-spec to_abstract(string()) -> erl_parse:abstract_form() | [erl_parse:abstract_expr()].
 %% @spec to_abstract(string()) -> erl_parse:abstract_form().
 to_abstract(String) ->
     {ok, Tokens, _EndLocation} =
