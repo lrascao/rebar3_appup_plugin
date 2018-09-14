@@ -53,7 +53,8 @@ groups() ->
           multiple_behaviours,
           custom_application_appup,
           capital_named_modules,
-          post_pre_generate
+          post_pre_generate,
+          multiple_versions
         ]
      }].
 
@@ -752,6 +753,20 @@ post_pre_generate(Config) ->
                {apply,{io,format, ["Downgrading finished from 1.0.34 to .*"]}},
                {apply,{io,format, ["Downgrading finished from 1.0.34 to 1.0.33"]}}]},
              [{delete_appup_src, true}],
+             Config),
+  ok.
+
+multiple_versions(doc) -> ["Start from 1.0.34 version, generate appup for 1.0.35 then checkout 1.0.36 and generate
+                            that one as well"];
+multiple_versions(suite) -> [];
+multiple_versions(Config) ->
+    ok = upgrade_downgrade(
+             "relapp1", ["1.0.34", "1.0.35", "1.0.36"],
+             [],
+             {[{load_module,relapp_m1,brutal_purge,brutal_purge, []}],
+              [{load_module,relapp_m1,brutal_purge,brutal_purge, []}]},
+             [{delete_appup_src, true},
+              {generate_opts, "--previous_version \"1.0.35\""}],
              Config),
   ok.
 
