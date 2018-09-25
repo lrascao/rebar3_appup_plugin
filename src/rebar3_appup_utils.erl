@@ -32,7 +32,8 @@
          beam_rel_path/2, beam_rel_path/4,
          get_abstract_code/2,
          tmp_filename/0,
-         find_app_by_name/2]).
+         find_app_by_name/2,
+         vsn/1]).
 
 %% Helper function for checking values and aborting when needed
 %% @spec prop_check(boolean(),_,_) -> any().
@@ -163,4 +164,11 @@ find_app_by_name(Name, Apps) ->
     ec_lists:find(fun(App) ->
         rebar_app_info:name(App) =:= Name
      end, Apps).
+
+-spec vsn(AppInfo :: term()) -> string().
+vsn(AppInfo) ->
+    case rebar_app_info:original_vsn(AppInfo) of
+        Vsn when is_binary(Vsn) -> binary_to_list(Vsn);
+        Vsn when is_list(Vsn) -> Vsn
+    end.
 
