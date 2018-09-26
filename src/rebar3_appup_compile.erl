@@ -70,6 +70,7 @@ format_error(Reason) ->
 %% ===================================================================
 
 process_app(AppInfo, State) ->
+    Vsn = rebar_app_info:original_vsn(AppInfo),
     Sources = find_appup_src_files(AppInfo),
     lists:foreach(fun(Source) ->
                     case filelib:is_file(Source) of
@@ -78,16 +79,16 @@ process_app(AppInfo, State) ->
                             %% application dependency, check for that
                             Name = list_to_binary(filename:basename(Source, ".appup.src")),
                             SourceAppInfo = rebar3_appup_utils:find_app_info(Name, State),
-                            process_appup_src(Source, SourceAppInfo, State);
+                            process_appup_src(Source, SourceAppInfo, State, Vsn);
                         false -> ok
                     end
                   end, Sources).
 
-process_appup_src(Source, AppInfo, State) ->
+process_appup_src(Source, AppInfo, State, Vsn) ->
     Target = appup_file_target(AppInfo),
     rebar_api:info("Compiling ~s to ~s",
         [filename:basename(Source), Target]),
-    case template(Source, AppInfo) of
+    case template(Source, Vsn) of
         {ok, AppUpBin} ->
             %% allocate a temporary file and write the templated
             %% contents to it
@@ -119,8 +120,8 @@ bs(Vars) ->
 evaluate(Source, State) ->
     file:script(Source, bs([{'STATE', State}])).
 
-template(Source, AppInfo) ->
-    Context = [{"vsn", rebar_app_info:original_vsn(AppInfo)}],
+template(Source, Vsn) ->
+    Context = [{"vsn", Vsn}],
     {ok, Template} = file:read_file(Source),
     case catch bbmustache:render(Template, Context) of
         B when is_binary(B) -> {ok, B};
