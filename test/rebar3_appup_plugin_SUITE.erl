@@ -53,7 +53,8 @@ groups() ->
           multiple_behaviours,
           custom_application_appup,
           capital_named_modules,
-          post_pre_generate
+          post_pre_generate,
+          multiple_versions
         ]
      }].
 
@@ -121,7 +122,7 @@ end_per_testcase(_Func, Config) ->
 empty_appup(doc) -> ["Generate an empty appup"];
 empty_appup(suite) -> [];
 empty_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.0", "1.0.1",
+    ok = upgrade_downgrade("relapp1", ["1.0.0", "1.0.1"],
                            {[], []},
                            Config),
     ok.
@@ -129,7 +130,7 @@ empty_appup(Config) when is_list(Config) ->
 supervisor_appup(doc) -> ["Generate an appup for a supervisor upgrade"];
 supervisor_appup(suite) -> [];
 supervisor_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.1", "1.0.2",
+    ok = upgrade_downgrade("relapp1", ["1.0.1", "1.0.2"],
                            {[{update, relapp_sup, supervisor}],
                             [{update, relapp_sup, supervisor}]},
                            Config),
@@ -138,7 +139,7 @@ supervisor_appup(Config) when is_list(Config) ->
 new_gen_server_appup(doc) -> ["Generate an appup for a gen_server upgrade"];
 new_gen_server_appup(suite) -> [];
 new_gen_server_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.2", "1.0.3",
+    ok = upgrade_downgrade("relapp1", ["1.0.2", "1.0.3"],
                            {[{add_module, relapp_srv, []},
                              {update, relapp_sup, supervisor},
                              {apply,{supervisor,restart_child,[relapp_sup,relapp_srv]}}],
@@ -153,7 +154,7 @@ new_gen_server_state_appup(doc) -> ["Generate an appup for a gen_server upgrade 
                                     "replacing it's state with an empty record"];
 new_gen_server_state_appup(suite) -> [];
 new_gen_server_state_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.3", "1.0.4",
+    ok = upgrade_downgrade("relapp1", ["1.0.3", "1.0.4"],
                            {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
                             [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
@@ -163,7 +164,7 @@ add_fields_gen_server_state_appup(doc) -> ["Generate an appup for a gen_server u
                                            "adding two new fields to the state record"];
 add_fields_gen_server_state_appup(suite) -> [];
 add_fields_gen_server_state_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.4", "1.0.5",
+    ok = upgrade_downgrade("relapp1", ["1.0.4", "1.0.5"],
                            {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
                             [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
@@ -173,7 +174,7 @@ add_field_middle_gen_server_state_appup(doc) -> ["Generate an appup for a gen_se
                                                  "adding a new field to the middle of the record state"];
 add_field_middle_gen_server_state_appup(suite) -> [];
 add_field_middle_gen_server_state_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.5", "1.0.6",
+    ok = upgrade_downgrade("relapp1", ["1.0.5", "1.0.6"],
                            {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
                             [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
@@ -184,7 +185,7 @@ replace_field_middle_gen_server_state_appup(doc) -> ["Generate an appup for a ge
                                                      "with a new one"];
 replace_field_middle_gen_server_state_appup(suite) -> [];
 replace_field_middle_gen_server_state_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.6", "1.0.7",
+    ok = upgrade_downgrade("relapp1", ["1.0.6", "1.0.7"],
                            {[{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}],
                             [{update, relapp_srv, {advanced,[]}, brutal_purge, brutal_purge, []}]},
                            Config),
@@ -202,7 +203,7 @@ new_dependency_appup(Config) when is_list(Config) ->
                             false = is_app_running("parse_trans", DeployDir),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.7", "1.0.8",
+    ok = upgrade_downgrade("relapp1", ["1.0.7", "1.0.8"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {[], []},
@@ -221,7 +222,7 @@ remove_dependency_appup(Config) when is_list(Config) ->
                             {ok, "3.0.0"} = get_app_version("parse_trans", DeployDir),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.8", "1.0.9",
+    ok = upgrade_downgrade("relapp1", ["1.0.8", "1.0.9"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {[], []},
@@ -232,7 +233,7 @@ restore_dependency_appup(doc) -> ["Generate an appup for an application that inv
                                   "restoring back a dependency that was removed"];
 restore_dependency_appup(suite) -> [];
 restore_dependency_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.9", "1.0.10",
+    ok = upgrade_downgrade("relapp1", ["1.0.9", "1.0.10"],
                            {[], []},
                            Config),
     ok.
@@ -242,7 +243,7 @@ new_auto_gen_server_appup(doc) -> ["Generate an appup for a gen_server upgrade "
                                    "migration"];
 new_auto_gen_server_appup(suite) -> [];
 new_auto_gen_server_appup(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.10", "1.0.11",
+    ok = upgrade_downgrade("relapp1", ["1.0.10", "1.0.11"],
                            {[{add_module, relapp_srv2, []},
                              {update, relapp_sup, supervisor},
                              {apply,{supervisor,restart_child,[relapp_sup,relapp_srv2]}}],
@@ -289,7 +290,7 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                             true = (Srv2State =:= "{state,42}"),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.11", "1.0.12",
+    ok = upgrade_downgrade("relapp1", ["1.0.11", "1.0.12"],
                            [{before_upgrade, BeforeUpgradeFun},
                             {after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
@@ -315,7 +316,7 @@ new_simple_module(Config) when is_list(Config) ->
                             true = (Ret =:= "false"),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.12", "1.0.13",
+    ok = upgrade_downgrade("relapp1", ["1.0.12", "1.0.13"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {[{add_module, relapp_m1, []}],
@@ -340,7 +341,7 @@ simple_module_use(Config) when is_list(Config) ->
                                              [], DeployDir),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.13", "1.0.14",
+    ok = upgrade_downgrade("relapp1", ["1.0.13", "1.0.14"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {[{load_module, relapp_m1, brutal_purge, brutal_purge, []},
@@ -414,7 +415,7 @@ brutal_purge_test(Config) when is_list(Config) ->
                             end,
                             State
                       end,
-    ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
+    ok = upgrade_downgrade("relapp1", ["1.0.15", "1.0.16"],
                            [{before_upgrade, BeforeUpgradeFun},
                             {check_upgrade, CheckUpgradeFun},
                             {after_upgrade, AfterUpgradeFun}],
@@ -484,7 +485,7 @@ soft_purge_test(Config) when is_list(Config) ->
                         end,
                         State
                       end,
-    ok = upgrade_downgrade("relapp1", "1.0.15", "1.0.16",
+    ok = upgrade_downgrade("relapp1", ["1.0.15", "1.0.16"],
                            [{before_upgrade, BeforeUpgradeFun},
                             {check_upgrade, CheckUpgradeFun},
                             {after_upgrade, AfterUpgradeFun},
@@ -498,7 +499,7 @@ soft_purge_test(Config) when is_list(Config) ->
 appup_src_scripting(doc) -> ["Test .appup.src scripting supports"];
 appup_src_scripting(suite) -> [];
 appup_src_scripting(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.16", "1.0.17",
+    ok = upgrade_downgrade("relapp1", ["1.0.16", "1.0.17"],
                            [],
                            {[{load_module,relapp_m1,brutal_purge,brutal_purge, [relapp_srv2]},
                              {update,relapp_srv, {advanced,[]}, brutal_purge,brutal_purge, [relapp_m1]},
@@ -532,7 +533,7 @@ appup_src_extra_argument(Config) when is_list(Config) ->
                             true = (Extra =:= "{ok,42}"),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.18", "1.0.19",
+    ok = upgrade_downgrade("relapp1", ["1.0.18", "1.0.19"],
                            [{before_upgrade, BeforeUpgradeFun},
                             {after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
@@ -577,7 +578,7 @@ appup_src_template_vars(Config) when is_list(Config) ->
                             true = (NewSrv2Pid =/= proplists:get_value(srv2_pid, State)),
                             State
                       end,
-    ok = upgrade_downgrade("relapp1", "1.0.21", "1.0.22",
+    ok = upgrade_downgrade("relapp1", ["1.0.21", "1.0.22"],
                            [{before_upgrade, BeforeUpgradeFun},
                             {after_upgrade, AfterUpgradeFun},
                             {before_downgrade, BeforeDowngradeFun},
@@ -593,7 +594,7 @@ appup_src_template_vars(Config) when is_list(Config) ->
 appup_src_state_var_scripting(doc) -> [""];
 appup_src_state_var_scripting(suite) -> [];
 appup_src_state_var_scripting(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.22", "1.0.23",
+    ok = upgrade_downgrade("relapp1", ["1.0.22", "1.0.23"],
                            [],
                            {
                             [{restart_application, relapp}],
@@ -621,7 +622,7 @@ add_supervisor_worker(Config) when is_list(Config) ->
                                     [], DeployDir),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.19", "1.0.20",
+    ok = upgrade_downgrade("relapp1", ["1.0.19", "1.0.20"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {
@@ -659,7 +660,7 @@ remove_supervisor_worker(Config) when is_list(Config) ->
                             {match, _} = re:run(Res, "relapp_srv3"),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.20", "1.0.21",
+    ok = upgrade_downgrade("relapp1", ["1.0.20", "1.0.21"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {
@@ -695,7 +696,7 @@ multiple_behaviours(Config) when is_list(Config) ->
                                     [], DeployDir),
                             State
                       end,
-    ok = upgrade_downgrade("relapp1", "1.0.26", "1.0.27",
+    ok = upgrade_downgrade("relapp1", ["1.0.26", "1.0.27"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {
@@ -718,7 +719,7 @@ custom_application_appup(Config) when is_list(Config) ->
                             {ok, "0.3.5"} = get_app_version("statsderl", DeployDir),
                             State
                         end,
-    ok = upgrade_downgrade("relapp1", "1.0.24", "1.0.25",
+    ok = upgrade_downgrade("relapp1", ["1.0.24", "1.0.25"],
                            [{after_upgrade, AfterUpgradeFun},
                             {after_downgrade, AfterDowngradeFun}],
                            {[], []},
@@ -729,7 +730,7 @@ custom_application_appup(Config) when is_list(Config) ->
 capital_named_modules(doc) -> ["Generate an appup for a release containing a module with capital name"];
 capital_named_modules(suite) -> [];
 capital_named_modules(Config) when is_list(Config) ->
-    ok = upgrade_downgrade("relapp1", "1.0.27", "1.0.28",
+    ok = upgrade_downgrade("relapp1", ["1.0.27", "1.0.28"],
                            [],
                            {[{add_module, 'RELAPP-CAPITAL-TEST_m2', []}],
                             [{delete_module, 'RELAPP-CAPITAL-TEST_m2'}]},
@@ -741,7 +742,7 @@ post_pre_generate(doc) -> ["generate post pre"];
 post_pre_generate(suite) -> [];
 post_pre_generate(Config) ->
     ok = upgrade_downgrade(
-             "relapp1", "1.0.33", "1.0.34",
+             "relapp1", ["1.0.33", "1.0.34"],
              [],
              {[{apply,{io,format,["Upgrading started from 1.* to 1.0.34"]}},
                {apply,{io,format, ["Upgrading started from 1.0.33 to 1.0.34"]}},
@@ -755,18 +756,32 @@ post_pre_generate(Config) ->
              Config),
   ok.
 
+multiple_versions(doc) -> ["Start from 1.0.34 version, generate appup for 1.0.35 then checkout 1.0.36 and generate
+                            that one as well"];
+multiple_versions(suite) -> [];
+multiple_versions(Config) ->
+    ok = upgrade_downgrade(
+             "relapp1", ["1.0.34", "1.0.35", "1.0.36"],
+             [],
+             {[{load_module,relapp_m1,brutal_purge,brutal_purge, []}],
+              [{load_module,relapp_m1,brutal_purge,brutal_purge, []}]},
+             [{delete_appup_src, true},
+              {generate_opts, "--previous_version \"1.0.35\""}],
+             Config),
+  ok.
+
 %% -------------------------------------------------------------
 %% Private methods
 %% -------------------------------------------------------------
 
-upgrade_downgrade(App, FromVersion, ToVersion,
+upgrade_downgrade(App, VersionSequence,
                   ExpectedAppup, Config) ->
-    upgrade_downgrade(App, FromVersion, ToVersion,
+    upgrade_downgrade(App, VersionSequence,
                       [],
                       ExpectedAppup,
                       [], Config).
 
-upgrade_downgrade(App, FromVersion, ToVersion,
+upgrade_downgrade(App, [FromVersion, ToVersion | []],
                   Hooks,
                   ExpectedAppup,
                   Opts, Config) ->
@@ -805,7 +820,27 @@ upgrade_downgrade(App, FromVersion, ToVersion,
                                    FromVersion, ToVersion,
                                    Hooks,
                                    Config),
-    ok.
+    ok;
+upgrade_downgrade(App, [Version1, Version2 | OtherVersions],
+                  Hooks,
+                  ExpectedAppup,
+                  Opts, Config) ->
+    % a version sequence of more than one was requested, generate the
+    % head version and move on to the rest
+    DataDir = lookup_config(data_dir, Config),
+    RelAppDir = filename:join(DataDir, App),
+    %% check out the from version
+    {ok, _} = git_checkout(RelAppDir, Version1),
+    case proplists:get_value(delete_appup_src, Opts, false) of
+      true -> file:delete(filename:join([RelAppDir, "apps",
+                                         "relapp", "src", "relapp.appup.src"]));
+      false -> ok
+    end,
+    {ok, _} = rebar3_command(RelAppDir, "tar"),
+    upgrade_downgrade(App, [Version2 | OtherVersions],
+                      Hooks,
+                      ExpectedAppup,
+                      Opts, Config).
 
 release_upgrade_downgrade(RelDir, AppName,
                           FromVersion, ToVersion,
