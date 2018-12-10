@@ -734,8 +734,12 @@ get_current_rel_path(State, Name) ->
       Res :: string().
 get_release_name(State) ->
     RelxConfig = rebar_state:get(State, relx, []),
-    {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
-    atom_to_list(Name0).
+    case lists:keyfind(release, 1, RelxConfig) of
+        {release, {Name0, _Ver}, _} ->
+            atom_to_list(Name0);
+        {release, {Name0, _Ver}, _, _} ->
+            atom_to_list(Name0)
+    end.
 
 %%------------------------------------------------------------------------------
 %%
