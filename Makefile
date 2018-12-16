@@ -25,7 +25,7 @@ endif
 
 .PHONY: all compile clean dialyzer test
 
-travis: update test
+travis: update test dialyzer
 
 all: deps compile
 

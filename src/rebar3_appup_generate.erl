@@ -140,13 +140,13 @@ do(State) ->
                             filename:join([CurrentRelPath, "lib"]),
                             ".appup"),
     %% Convert the list of appup files into app names
-    CurrentAppUpApps = [file_to_name(File) || File <- CurrentAppUpFiles],
+    CurrentAppUpApps = lists:usort([appup_info(File) || File <- CurrentAppUpFiles]),
     rebar_api:debug("apps that already have .appups: ~p",
         [CurrentAppUpApps]),
 
     %% Create a list of apps that don't already have appups
-    UpgradeApps = gen_appup_which_apps(UpgradeApps0 ++ AddApps0, CurrentAppUpApps),
-    AddApps = gen_appup_which_apps(AddApps0, CurrentAppUpApps),
+    UpgradeApps = gen_appup_which_apps(UpgradeApps0 ++ AddApps0, CurrentVer, CurrentAppUpApps),
+    AddApps = gen_appup_which_apps(AddApps0, CurrentVer, CurrentAppUpApps),
     rebar_api:debug("generating .appup for apps: ~p",
         [AddApps ++ UpgradeApps ++ RemoveApps]),
 
@@ -272,11 +272,21 @@ app_list_diff(List1, List2) ->
 file_to_name(File) ->
     filename:rootname(filename:basename(File)).
 
+%% @spec appup_info(string()) -> {App :: atom(),
+%%                                ToVersion :: string()}.
+appup_info(File) ->
+    {ok, [{ToVersion, _, _}]} = file:consult(File),
+    {file_to_name(File), ToVersion}.
+
 %% @spec gen_appup_which_apps([any()],[string()]) -> [any()].
-gen_appup_which_apps(UpgradedApps, [First|Rest]) ->
-    List = lists:keydelete(list_to_atom(First), 2, UpgradedApps),
-    gen_appup_which_apps(List, Rest);
-gen_appup_which_apps(Apps, []) ->
+gen_appup_which_apps(UpgradedApps0, CurrentVersion, [{App, Version} | Rest]) ->
+    UpgradedApps = case CurrentVersion =:= Version of
+                        true ->
+                            lists:keydelete(list_to_atom(App), 2, UpgradedApps0);
+                        false -> UpgradedApps0
+                   end,
+    gen_appup_which_apps(UpgradedApps, CurrentVersion, Rest);
+gen_appup_which_apps(Apps, _CurrentVersion, []) ->
     Apps.
 
 %% @spec generate_appup_files(_,atom() | binary() | [atom() | [any()] | char()],atom() | binary() | [atom() | [any()] | char()],{'upgrade',_,{'undefined' | [any()],_}},[{'plugin_dir',_} | {'purge_opts',[any()]},...],_) -> 'ok'.
@@ -724,8 +734,12 @@ get_current_rel_path(State, Name) ->
       Res :: string().
 get_release_name(State) ->
     RelxConfig = rebar_state:get(State, relx, []),
-    {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
-    atom_to_list(Name0).
+    case lists:keyfind(release, 1, RelxConfig) of
+        {release, {Name0, _Ver}, _} ->
+            atom_to_list(Name0);
+        {release, {Name0, _Ver}, _, _} ->
+            atom_to_list(Name0)
+    end.
 
 %%------------------------------------------------------------------------------
 %%
