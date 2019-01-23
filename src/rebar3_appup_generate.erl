@@ -655,6 +655,8 @@ diff_supervisor_spec(_, _) ->
 supervisor_spec_workers([], Acc) -> Acc;
 supervisor_spec_workers([{_, {Mod, _F, _A}, _, _, worker, _} | Rest], Acc) ->
     supervisor_spec_workers(Rest, Acc ++ [Mod]);
+supervisor_spec_workers([#{start := {Mod, _F, _A}, type := worker} | Rest], Acc) ->
+    supervisor_spec_workers(Rest, Acc ++ [Mod]);
 supervisor_spec_workers([_ | Rest], Acc) ->
     supervisor_spec_workers(Rest, Acc).
 
