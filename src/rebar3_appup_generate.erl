@@ -655,8 +655,21 @@ diff_supervisor_spec(_, _) ->
 supervisor_spec_workers([], Acc) -> Acc;
 supervisor_spec_workers([{_, {Mod, _F, _A}, _, _, worker, _} | Rest], Acc) ->
     supervisor_spec_workers(Rest, Acc ++ [Mod]);
-supervisor_spec_workers([#{start := {Mod, _F, _A}, type := worker} | Rest], Acc) ->
-    supervisor_spec_workers(Rest, Acc ++ [Mod]);
+supervisor_spec_workers([MapSpec | Rest], Acc) when is_map(MapSpec) ->
+    case maps:find(start, MapSpec) of
+        {ok, {Mod, _F, _A}} ->
+            case maps:find(type, MapSpec) of
+                error ->
+                    %% if not set the type, the default is worker, see the ?default_child_spec definition in the file supervisor.erl
+                    supervisor_spec_workers(Rest, Acc ++ [Mod]);
+                {ok, worker} ->
+                    supervisor_spec_workers(Rest, Acc ++ [Mod]);
+                _ ->
+                    supervisor_spec_workers(Rest, Acc)
+            end;
+        error ->
+            supervisor_spec_workers(Rest, Acc)
+    end;
 supervisor_spec_workers([_ | Rest], Acc) ->
     supervisor_spec_workers(Rest, Acc).
 
