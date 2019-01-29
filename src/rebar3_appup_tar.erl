@@ -55,13 +55,7 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 %% @spec do(rebar_state:t()) -> {'ok',rebar_state:t()} | {'error',string()}.
 do(State) ->
-    RelxConfig = rebar_state:get(State, relx, []),
-    Name = case lists:keyfind(release, 1, RelxConfig) of
-               {release, {Name0, _Ver}, _} ->
-                   atom_to_list(Name0);
-               {release, {Name0, _Ver}, _, _} ->
-                   atom_to_list(Name0)
-           end,
+    Name = rebar3_appup_utils:get_release_name(State),
     rebar_api:debug("release name: ~p", [Name]),
 
     RelDir = filename:join([rebar_dir:base_dir(State),
