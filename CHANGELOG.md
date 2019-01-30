@@ -4,6 +4,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.3] - 30-01-2019
+### Added
+### Changed
+### Fixed
+- [(fix) Add -n parameter to accept release name](https://github.com/lrascao/rebar3_appup_utils/pull/58)
+- [filter map spec list](https://github.com/lrascao/rebar3_appup_utils/pull/56)
+
 ## [2.4.2] - 16-12-2018
 ### Added
 ### Changed
