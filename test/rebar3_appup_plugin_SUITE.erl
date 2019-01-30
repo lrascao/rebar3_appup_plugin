@@ -54,7 +54,9 @@ groups() ->
           custom_application_appup,
           capital_named_modules,
           post_pre_generate,
-          multiple_versions
+          multiple_versions,
+          add_supervisor_map_spec_default_worker,
+          add_supervisor_map_spec_worker
         ]
      }].
 
@@ -769,6 +771,83 @@ multiple_versions(Config) ->
               {generate_opts, "--previous_version \"1.0.35\""}],
              Config),
   ok.
+
+add_supervisor_map_spec_default_worker(doc) -> ["Ensure that new supervised workers are launched after an "
+                                                "upgrade, even when specified using the map spec syntax
+                                                 and not defining the type"];
+add_supervisor_map_spec_default_worker(suite) -> [];
+add_supervisor_map_spec_default_worker(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Res} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(a_server, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            {match, _} = re:run(Res, "a_server"),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, "false"} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(a_server, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            State
+                        end,
+    ok = upgrade_downgrade("relapp1", ["1.0.36", "1.0.37"],
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                              [{add_module, a_server,[]},
+                               {update, relapp_sup, supervisor},
+                               {apply, {supervisor, restart_child,
+                                      [relapp_sup, a_server]}}],
+                              [{apply, {supervisor, terminate_child,
+                                      [relapp_sup, a_server]}},
+                               {apply, {supervisor, delete_child,
+                                      [relapp_sup, a_server]}},
+                               {update, relapp_sup, supervisor},
+                               {delete_module, a_server}]
+                           },
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
+
+add_supervisor_map_spec_worker(doc) -> ["Ensure that new supervised workers are launched after an "
+                                        "upgrade, even when specified using the map spec syntax"];
+add_supervisor_map_spec_worker(suite) -> [];
+add_supervisor_map_spec_worker(Config) when is_list(Config) ->
+    AfterUpgradeFun = fun(DeployDir, State) ->
+                            {ok, Res} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(b_server, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            {match, _} = re:run(Res, "b_server"),
+                            State
+                      end,
+    AfterDowngradeFun = fun(DeployDir, State) ->
+                            {ok, "false"} =
+                              sh("./bin/relapp eval "
+                                    "\"lists:keyfind(b_server, 1, supervisor:which_children(relapp_sup))\"",
+                                    [], DeployDir),
+                            State
+                        end,
+    ok = upgrade_downgrade("relapp1", ["1.0.37", "1.0.38"],
+                           [{after_upgrade, AfterUpgradeFun},
+                            {after_downgrade, AfterDowngradeFun}],
+                           {
+                              [{add_module, b_server,[]},
+                               {update, relapp_sup, supervisor},
+                               {apply, {supervisor, restart_child,
+                                      [relapp_sup, b_server]}}],
+                              [{apply, {supervisor, terminate_child,
+                                      [relapp_sup, b_server]}},
+                               {apply, {supervisor, delete_child,
+                                      [relapp_sup, b_server]}},
+                               {update, relapp_sup, supervisor},
+                               {delete_module, b_server}]
+                           },
+                           [{delete_appup_src, true}],
+                           Config),
+    ok.
 
 %% -------------------------------------------------------------
 %% Private methods
