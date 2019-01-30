@@ -4,6 +4,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.4] - 30-01-2019
+### Added
+### Changed
+### Fixed
+- [(fix) Support 'relname' - handle relname arg](https://github.com/lrascao/rebar3_appup_utils/pull/59)
+
 ## [2.4.3] - 30-01-2019
 ### Added
 ### Changed
