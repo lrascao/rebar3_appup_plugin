@@ -37,12 +37,22 @@
          vsn/1]).
 
 -spec get_release_name(State) -> Res when
-    State :: rebar_state:t(),
-    Res :: string().
+      State :: rebar_state:t(),
+      Res :: string().
 get_release_name(State) ->
-    RelxConfig = rebar_state:get(State, relx, []),
-    {release, {Name0, _Ver}, _} = lists:keyfind(release, 1, RelxConfig),
-    atom_to_list(Name0).
+    {Opts, _} = rebar_state:command_parsed_args(State),
+    case proplists:get_value(relname, Opts, undefined) of
+        undefined ->
+            RelxConfig = rebar_state:get(State, relx, []),
+            case lists:keyfind(release, 1, RelxConfig) of
+                {release, {Name0, _Ver}, _} ->
+                    atom_to_list(Name0);
+                {release, {Name0, _Ver}, _, _} ->
+                    atom_to_list(Name0)
+            end;
+        Name ->
+            Name
+    end.
 
 %% Helper function for checking values and aborting when needed
 %% @spec prop_check(boolean(),_,_) -> any().
