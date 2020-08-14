@@ -69,7 +69,7 @@ init_per_suite(Config) ->
     Apps = proplists:get_value(apps, SuiteConfig),
     lists:foreach(fun({App, GitUrl, Branch}) ->
                     git_clone(App, GitUrl, Branch, DataDir),
-                    {ok, _} = sh(io_lib:format("rsync -a --exclude='_build' ~s .",
+                    {ok, _} = sh(io_lib:format("/sbin/rsync -a --exclude='_build' ~s .",
                                                [SrcDir]),
                                  [], DataDir),
                     RelDir = filename:join([DataDir, App]),
