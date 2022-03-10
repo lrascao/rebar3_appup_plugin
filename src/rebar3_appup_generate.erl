@@ -392,7 +392,7 @@ write_appup(App, OldVer, NewVer, TargetDir,
     CurrentBaseDir = rebar_dir:base_dir(State),
     %% check for the app either in deps or lib
     rebar_api:info("current base dir: ~p", [CurrentBaseDir]),
-    CheckoutsEbinDir = filename:join([rebar_dir:checkouts_dir(State),
+    CheckoutsEbinDir = filename:join([rebar_dir:checkouts_out_dir(State),
                                       atom_to_list(App), "ebin"]),
     DepsEbinDir = filename:join([CurrentBaseDir, "deps",
                                 atom_to_list(App), "ebin"]),
