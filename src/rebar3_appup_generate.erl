@@ -312,9 +312,7 @@ generate_appup_files(TargetDir,
                                 atom_to_list(App) ++ "-" ++ OldVer, "ebin"]),
     NewRelEbinDir = filename:join([NewVerPath, "lib",
                                 atom_to_list(App) ++ "-" ++ NewVer, "ebin"]),
-
-    {AddedFiles, DeletedFiles, ChangedFiles} = beam_lib:cmp_dirs(NewRelEbinDir,
-                                                                 OldRelEbinDir),
+    {AddedFiles, DeletedFiles, ChangedFiles} = cmp_dirs(NewRelEbinDir, OldRelEbinDir),
     rebar_api:debug("beam files:", []),
     rebar_api:debug("   added: ~p", [AddedFiles]),
     rebar_api:debug("   deleted: ~p", [DeletedFiles]),
@@ -952,3 +950,90 @@ find_file_by_ext(Dir, Ext) ->
         [Path] ->
             Path
     end.
+
+-spec cmp_dirs(Dir1, Dir2) -> Res when
+      Dir1 :: file:filename(),
+      Dir2 :: file:filename(),
+      Res :: {list(file:filename()), list(file:filename()),
+              list({file:filename(), file:filename()})}.
+cmp_dirs(Dir1, Dir2) ->
+    catch compare_dirs(Dir1, Dir2).
+
+-spec compare_dirs(Dir1, Dir2) -> Res when
+      Dir1 :: file:filename(),
+      Dir2 :: file:filename(),
+      Res :: {list(file:filename()), list(file:filename()),
+              list({file:filename(), file:filename()})}.
+compare_dirs(Dir1, Dir2) ->
+    R1 = sofs:relation(beam_files(Dir1)),
+    R2 = sofs:relation(beam_files(Dir2)),
+    F1 = sofs:domain(R1),
+    F2 = sofs:domain(R2),
+    {O1, Both, O2} = sofs:symmetric_partition(F1, F2),
+    OnlyL1 = sofs:image(R1, O1),
+    OnlyL2 = sofs:image(R2, O2),
+    B1 = sofs:to_external(sofs:restriction(R1, Both)),
+    B2 = sofs:to_external(sofs:restriction(R2, Both)),
+    Diff = compare_files(B1, B2, []),
+    {sofs:to_external(OnlyL1), sofs:to_external(OnlyL2), Diff}.
+
+-spec beam_files(Dir) -> Res when
+      Dir :: file:filename(),
+      Res :: list({file:filename(), file:filename()}).
+beam_files(Dir) ->
+    ok = assert_directory(Dir),
+    L = filelib:wildcard(filename:join(Dir, "*.beam")),
+    [{filename:basename(Path), Path} || Path <- L].
+
+-spec assert_directory(Dir) -> Res when
+      Dir :: file:filename(),
+      Res :: ok.
+assert_directory(Dir) ->
+    case filelib:is_dir(Dir) of
+        true ->
+            ok;
+        false ->
+            error({not_a_directory, Dir})
+    end.
+
+-spec compare_files(Files1, Files2, Acc) -> Res when
+      Files1 :: list({file:filename(), file:filename()}),
+      Files2 :: list({file:filename(), file:filename()}),
+      Acc :: list({file:filename(), file:filename()}),
+      Res :: list({file:filename(), file:filename()}).
+compare_files([], [], Acc) ->
+    lists:reverse(Acc);
+compare_files([{_, File1} | T1], [{_, File2} | T2], Acc) ->
+    Acc1 = case cmp_files(File1, File2) of
+               true ->
+                   Acc;
+               false ->
+                   [{File1, File2} | Acc]
+           end,
+    compare_files(T1, T2, Acc1).
+
+-spec cmp_files(File1, File2) -> Res when
+      File1 :: file:filename(),
+      File2 :: file:filename(),
+      Res :: boolean().
+cmp_files(File1, File2) ->
+  L1 = read_file(File1),
+  L2 = read_file(File2),
+  L1 =:= L2.
+
+-spec read_file(File) -> Res when
+      File :: file:filename(),
+      Res :: beam_lib:abst_code().
+read_file(File) ->
+  {ok,{_,[{abstract_code,{_,AC}}]}} = beam_lib:chunks(File,[abstract_code]),
+  filter_ac(AC).
+
+-spec filter_ac(AC) -> Res when
+      AC :: beam_lib:abst_code(),
+      Res :: beam_lib:abst_code().
+filter_ac(AC) ->
+  lists:filter(fun({attribute, _, file, _}) ->
+                       false;
+                  (_) ->
+                       true
+               end, AC).
