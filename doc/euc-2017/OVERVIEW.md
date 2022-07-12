@@ -102,7 +102,7 @@
                     * PrePurge, PostPurge
                     * DepMods
     * Next comes the relup file
-        * Similar to the appup but at a lower level, you tipically don't need to mess with this one
+        * Similar to the appup but at a lower level, you typically don't need to mess with this one
     * The upgrade itself is just asking release_handler to upgrade to the tarball you have somewhere with the new version
     * Doing it by hand (short version)
         * Writing the appup

@@ -24,7 +24,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - [(fix) Support relx release configs that contain opts](https://github.com/lrascao/rebar3_appup_utils/pull/53)
 - [Fix/#49/appup not generated](https://github.com/lrascao/rebar3_appup_utils/pull/52)
 - [read original_vsn from the app file](https://github.com/lrascao/rebar3_appup_utils/pull/36)
-- [Add auxilliary vsn method for appup state scripting](https://github.com/lrascao/rebar3_appup_utils/pull/50)
+- [Add auxiliary vsn method for appup state scripting](https://github.com/lrascao/rebar3_appup_utils/pull/50)
 - [add dialyzer test](https://github.com/lrascao/rebar3_appup_utils/pull/48)
 - [Deprecate OTP R16B](https://github.com/lrascao/rebar3_appup_utils/pull/46)
 
