@@ -1,21 +1,43 @@
-name: Erlang CI
+name: Common Test
 
 on:
-  push:
-    branches: [ develop ]
   pull_request:
-    branches: [ develop ]
+    branches:
+      - 'develop'
+  push:
+    branches:
+      - 'develop'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    container:
-      image: erlang:22.0.7
+  linux:
+    name: Test on OTP ${{ matrix.combo.otp-version }} and ${{ matrix.combo.os }}
+    runs-on: ${{ matrix.combo.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        combo:
+          - os: 'ubuntu-latest'
+            otp-version: '24'
+            rebar3-version: '3.16'
+          - os: 'ubuntu-latest'
+            otp-version: '25'
+            rebar3-version: '3.16'
+          - os: 'ubuntu-latest'
+            otp-version: '26'
+            rebar3-version: '3.22.1'
 
     steps:
     - uses: actions/checkout@v2
+    - uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ matrix.combo.otp-version }}
+        rebar3-version: ${{ matrix.combo.rebar3-version }}
+    - name: Update
+      run: rebar3 update
     - name: Compile
       run: make compile
-    - name: Run tests
+    - name: Test
       run: make ci
+
 
