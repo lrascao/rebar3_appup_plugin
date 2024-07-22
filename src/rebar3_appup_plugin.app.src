@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 {application, rebar3_appup_plugin, [
         {description, "A rebar3 plugin for handling .appup files"},
-        {vsn, "2.4.5"},
+        {vsn, "2.4.6"},
         {registered, []},
         {applications,
             [
