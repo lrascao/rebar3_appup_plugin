@@ -4,6 +4,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.6] - 22-07-2024
+### Added
+### Changed
+### Fixed
+- Fix bbmustache dep lock
+
 ## [2.4.5] - 22-07-2024
 ### Added
 ### Changed
