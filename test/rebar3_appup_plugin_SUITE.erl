@@ -1006,9 +1006,9 @@ rebar3_command(Dir, Command) ->
     rebar3_command(Dir, Command, []).
 
 rebar3_command(Dir, Command, []) ->
-    sh("./rebar3 " ++ Command, [], Dir);
+    sh("rebar3 " ++ Command, [], Dir);
 rebar3_command(Dir, Command, [debug]) ->
-    sh("./rebar3 " ++ Command, [{"DEBUG", "1"}], Dir).
+    sh("rebar3 " ++ Command, [{"DEBUG", "1"}], Dir).
 
 git_checkout(Dir, Tag) ->
     sh("git checkout " ++ Tag, [], Dir).

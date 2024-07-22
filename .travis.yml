@@ -1,11 +1,11 @@
 sudo: false
 language: erlang
 otp_release:
+  - 22.0
   - 21.0.4
   - 20.3.8.2
   - 19.3
   - 18.3
-  - 17.5
 before_script:
   - wget https://s3.amazonaws.com/rebar3-nightly/rebar3
   - chmod u+x rebar3

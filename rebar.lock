@@ -1,8 +1,8 @@
 {"1.1.0",
-[{<<"bbmustache">>,{pkg,<<"bbmustache">>,<<"1.5.0">>},0},
+[{<<"bbmustache">>,{pkg,<<"bbmustache">>,<<"1.12.2">>},0},
  {<<"string_compat">>,{pkg,<<"string_compat">>,<<"0.0.1">>},0}]}.
 [
 {pkg_hash,[
- {<<"bbmustache">>, <<"8CFDE0602E90A4057E161BF5288ADE854B4E511E2E8924966A8438730E958381">>},
+ {<<"bbmustache">>, <<"0CABDCE0DB9FE6D3318131174B9F2B351328A4C0AFBEB3E6E99BB0E02E9B621D">>},
  {<<"string_compat">>, <<"90E3196826B84EF8F7F9A0B50007697F1228C0E06A5E64112648D4ABC8CFC452">>}]}
 ].

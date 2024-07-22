@@ -1,0 +1,45 @@
+name: Common Test
+
+on:
+  pull_request:
+    branches:
+      - 'develop'
+  push:
+    branches:
+      - 'develop'
+
+jobs:
+  linux:
+    name: Test on OTP ${{ matrix.combo.otp-version }} and ${{ matrix.combo.os }}
+    runs-on: ${{ matrix.combo.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        combo:
+          - os: 'ubuntu-latest'
+            otp-version: '24'
+            rebar3-version: '3.16'
+          - os: 'ubuntu-latest'
+            otp-version: '25'
+            rebar3-version: '3.16'
+          - os: 'ubuntu-latest'
+            otp-version: '26'
+            rebar3-version: '3.22.1'
+
+    steps:
+    - uses: GuillaumeFalourd/setup-rsync@v1.2
+      id: rsync
+    - uses: actions/checkout@v2
+    - uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ matrix.combo.otp-version }}
+        rebar3-version: ${{ matrix.combo.rebar3-version }}
+    - name: Update
+      run: rebar3 update
+    - name: Compile
+      run: make compile
+    - name: Test
+      run: make ci
+
+
