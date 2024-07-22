@@ -1,8 +1,11 @@
-{"1.1.0",
+{"1.2.0",
 [{<<"bbmustache">>,{pkg,<<"bbmustache">>,<<"1.12.2">>},0},
  {<<"string_compat">>,{pkg,<<"string_compat">>,<<"0.0.1">>},0}]}.
 [
 {pkg_hash,[
  {<<"bbmustache">>, <<"0CABDCE0DB9FE6D3318131174B9F2B351328A4C0AFBEB3E6E99BB0E02E9B621D">>},
- {<<"string_compat">>, <<"90E3196826B84EF8F7F9A0B50007697F1228C0E06A5E64112648D4ABC8CFC452">>}]}
+ {<<"string_compat">>, <<"90E3196826B84EF8F7F9A0B50007697F1228C0E06A5E64112648D4ABC8CFC452">>}]},
+{pkg_hash_ext,[
+ {<<"bbmustache">>, <<"688B33A4D5CC2D51F575ADF0B3683FC40A38314A2F150906EDCFC77F5B577B3B">>},
+ {<<"string_compat">>, <<"F79434742AA7313C960DF8EE0D16DD5E93D3FD897F0EF666F56E60C56DA06268">>}]}
 ].
