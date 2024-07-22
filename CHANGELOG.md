@@ -4,6 +4,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.5] - 22-07-2024
+### Added
+### Changed
+### Fixed
+- [Update bbmustache to version 1.12.2](https://github.com/lrascao/rebar3_appup_plugin/pull/72)
+
 ## [2.4.4] - 30-01-2019
 ### Added
 ### Changed
