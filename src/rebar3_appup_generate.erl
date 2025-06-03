@@ -1023,17 +1023,20 @@ cmp_files(File1, File2) ->
 
 -spec read_file(File) -> Res when
       File :: file:filename(),
-      Res :: beam_lib:abst_code().
+      Res :: no_abstract_code | beam_lib:forms().
 read_file(File) ->
-  {ok,{_,[{abstract_code,{_,AC}}]}} = beam_lib:chunks(File,[abstract_code]),
-  filter_ac(AC).
+  {ok,{_,[{abstract_code,AC}]}} = beam_lib:chunks(File,[abstract_code]),
+  case AC of
+    no_abstract_code -> no_abstract_code;
+    {_, Forms} -> filter_ac_forms(Forms)
+  end.
 
--spec filter_ac(AC) -> Res when
-      AC :: beam_lib:abst_code(),
-      Res :: beam_lib:abst_code().
-filter_ac(AC) ->
+-spec filter_ac_forms(Forms) -> Res when
+      Forms :: beam_lib:forms(),
+      Res :: beam_lib:forms().
+filter_ac_forms(Forms) ->
   lists:filter(fun({attribute, _, file, _}) ->
                        false;
                   (_) ->
                        true
-               end, AC).
+               end, Forms).
