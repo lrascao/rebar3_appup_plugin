@@ -4,6 +4,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.7] - 03-06-2025
+### Added
+### Changed
+### Fixed
+- fix a crash when evaluating a module with no abstract code
+
 ## [2.4.6] - 22-07-2024
 ### Added
 ### Changed
