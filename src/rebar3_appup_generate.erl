@@ -362,7 +362,7 @@ module_dependencies(Files) ->
                       end, Files),
     Dirs = lists:usort(Dirs0),
     %% start off xref
-    {ok, _} = xref:start(xref),
+    {ok, _} = xref:start(xref, [{xref_mode, modules}]),
     %% add each of the directories to the xref path
 
     lists:foreach(fun(Dir) ->
