@@ -284,7 +284,7 @@ do_state_record_migration(Module,
                                                    FromVersion),
     %% inject the old record version in the new beam code
     Forms1 = inject_record(OldStateRecordName, OldStateRecordAbst, Forms0),
-    %% inject the auxilliary method for record conversion
+    %% inject the auxiliary method for record conversion
     Forms2 = inject_method(ConvertAuxForm, Forms1),
     %% inject the method that performs the record conversion
     Forms3 = inject_method(ConvertForm, Forms2),
