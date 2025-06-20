@@ -4,6 +4,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased][unreleased]
 
+## [2.4.8] - 20-06-2025
+### Added
+### Changed
+### Fixed
+- Revert "Filter changes in the beams related to different compile options"
+- use xref modules mode to evaluate module dependencies to avoid a crash
+
 ## [2.4.7] - 03-06-2025
 ### Added
 ### Changed
