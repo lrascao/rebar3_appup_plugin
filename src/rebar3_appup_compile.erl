@@ -123,9 +123,10 @@ evaluate(Source, State) ->
 template(Source, Vsn) ->
     Context = [{"vsn", Vsn}],
     {ok, Template} = file:read_file(Source),
-    case catch bbmustache:render(Template, Context) of
-        B when is_binary(B) -> {ok, B};
-        Error -> {error, Error}
+    try bbmustache:render(Template, Context) of
+        B when is_binary(B) -> {ok, B}
+    catch Class:Reason:Stacktrace ->
+        {error, {Class, Reason, Stacktrace}}
     end.
 
 compile(AppupTerm, Target) ->

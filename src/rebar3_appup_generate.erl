@@ -635,15 +635,19 @@ get_supervisor_spec(Module, EbinDir) ->
     {module, Module} = rebar3_appup_utils:load_module_from_beam(Beam, Module),
     {ok, Arg} = guess_supervisor_init_arg(Module, Beam),
     rebar_api:debug("supervisor init arg: ~p", [Arg]),
-    Spec = case catch Module:init(Arg) of
+    Spec = try Module:init(Arg) of
             {ok, S} -> S;
-            _ ->
-                rebar_api:info("could not obtain supervisor ~p spec, unable to generate "
-                               "supervisor appup instructions", [Module]),
-                undefined
+            _ -> get_supervisor_spec_failed(Module)
+           catch _:_ -> get_supervisor_spec_failed(Module)
            end,
     rebar3_appup_utils:unload_module_from_beam(Beam, Module),
     Spec.
+
+get_supervisor_spec_failed(Module) ->
+    rebar_api:info("could not obtain supervisor ~p spec, unable to generate "
+                   "supervisor appup instructions", [Module]),
+    undefined.
+
 
 diff_supervisor_spec({_, Spec1}, {_, Spec2}) ->
     Workers1 = supervisor_spec_workers(Spec1, []),
