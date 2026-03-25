@@ -73,9 +73,6 @@ init_per_suite(Config) ->
                                                [SrcDir]),
                                  [], DataDir),
                     RelDir = filename:join([DataDir, App]),
-                    {ok, _} = sh(io_lib:format("cp -f rebar3 ~s",
-                                               [RelDir]),
-                                 [], SrcDir),
                     {ok, _} = sh("mkdir -p _checkouts", [], RelDir),
                     CheckoutsDir = filename:join([RelDir, "_checkouts"]),
                     {ok, _} = sh(io_lib:format("ln -s ~s/rebar3_appup_plugin rebar3_appup_plugin",
@@ -813,7 +810,7 @@ upgrade_downgrade(App, [FromVersion, ToVersion | []],
     %% ensure that we have an expected appup file
     ExpectedAppup = check_appup(RelAppDir, "relapp", FromVersion, ToVersion),
     %% now generate the relup
-    {ok, _} = rebar3_command(RelAppDir, "relup"),
+    {ok, _} = rebar3_command(RelAppDir, "relup --relname relapp --relvsn " ++ ToVersion),
     {ok, _} = rebar3_command(RelAppDir, "tar"),
     %% and now actually perform it on a running release
     ok = release_upgrade_downgrade(RelAppDir, "relapp",
@@ -1011,7 +1008,29 @@ rebar3_command(Dir, Command, [debug]) ->
     sh("rebar3 " ++ Command, [{"DEBUG", "1"}], Dir).
 
 git_checkout(Dir, Tag) ->
-    sh("git checkout " ++ Tag, [], Dir).
+    %% restore any files modified by fix_git_protocol before switching tags
+    _ = sh("git checkout -- rebar.config rebar.lock 2>/dev/null; true", [], Dir),
+    Result = sh("git checkout " ++ Tag, [], Dir),
+    %% GitHub disabled the git:// protocol, replace with https://
+    %% in rebar.config and rebar.lock if present
+    fix_git_protocol(Dir),
+    Result.
+
+fix_git_protocol(Dir) ->
+    lists:foreach(fun(File) ->
+        Path = filename:join(Dir, File),
+        case file:read_file(Path) of
+            {ok, Bin} ->
+                case binary:match(Bin, <<"git://github.com">>) of
+                    nomatch -> ok;
+                    _ ->
+                        New = binary:replace(Bin, <<"git://github.com">>,
+                                             <<"https://github.com">>, [global]),
+                        file:write_file(Path, New)
+                end;
+            {error, _} -> ok
+        end
+    end, ["rebar.config", "rebar.lock"]).
 
 git_clone(Name, Url, Branch, Dir) ->
     sh("git clone -b " ++ Branch ++ " " ++ Url ++ " " ++ Name, [], Dir).
