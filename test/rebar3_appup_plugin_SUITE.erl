@@ -263,14 +263,14 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                             {ok, Srv2State0} = sh("./bin/relapp eval "
                                               "\"sys:get_state(relapp_srv2).\"",
                                               [], DeployDir),
-                            true = (Srv2State0 =:= "{state,0}"),
+                            true = (strip_spaces(Srv2State0) =:= "{state,0}"),
                             sh("./bin/relapp eval "
                                "\"relapp_srv2:set_state({state, 42}).\"",
                                [], DeployDir),
                             {ok, Srv2State1} = sh("./bin/relapp eval "
                                               "\"sys:get_state(relapp_srv2).\"",
                                               [], DeployDir),
-                            true = (Srv2State1 =:= "{state,42}"),
+                            true = (strip_spaces(Srv2State1) =:= "{state,42}"),
                             State
                        end,
     AfterUpgradeFun = fun(DeployDir, State) ->
@@ -278,7 +278,7 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                                              "\"sys:get_state(relapp_srv2).\"",
                                              [], DeployDir),
                             log("state: ~p\n", [Srv2State]),
-                            true = (Srv2State =:= "{state,42,<<>>,<<>>}"),
+                            true = (normalize_eval(Srv2State) =:= "{state,42,<<>>,<<>>}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
@@ -286,7 +286,7 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                                              "\"sys:get_state(relapp_srv2).\"",
                                              [], DeployDir),
                             log("state: ~p\n", [Srv2State]),
-                            true = (Srv2State =:= "{state,42}"),
+                            true = (strip_spaces(Srv2State) =:= "{state,42}"),
                             State
                         end,
     ok = upgrade_downgrade("relapp1", ["1.0.11", "1.0.12"],
@@ -332,9 +332,7 @@ simple_module_use(Config) when is_list(Config) ->
                             {ok, Result} = sh("./bin/relapp eval "
                                             "\"relapp_m1:test(arg).\"",
                                             [], DeployDir),
-                            %% OTP 25+ formats tuples with spaces after commas
-                            true = (Result =:= "{ok,arg}" orelse
-                                    Result =:= "{ok, arg}"),
+                            true = (strip_spaces(Result) =:= "{ok,arg}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
@@ -525,14 +523,14 @@ appup_src_extra_argument(Config) when is_list(Config) ->
                             {ok, Extra} = sh("./bin/relapp eval "
                                                   "\"relapp_srv:get_extra().\"",
                                                   [], DeployDir),
-                            true = (Extra =:= "{upgrade,42}"),
+                            true = (strip_spaces(Extra) =:= "{upgrade,42}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, Extra} = sh("./bin/relapp eval "
                                                   "\"relapp_srv:get_description_id().\"",
                                                   [], DeployDir),
-                            true = (Extra =:= "{ok,42}"),
+                            true = (strip_spaces(Extra) =:= "{ok,42}"),
                             State
                         end,
     ok = upgrade_downgrade("relapp1", ["1.0.18", "1.0.19"],
@@ -996,6 +994,18 @@ log(Format, Args) ->
             io:format(Pid, Format, Args)
     end.
 
+%% Strip spaces from eval output for comparison.
+%% OTP 25+ formats terms with spaces after commas (e.g. "{state, 0}"
+%% instead of "{state,0}").
+strip_spaces(Str) ->
+    lists:filter(fun(C) -> C =/= $\s end, Str).
+
+%% Normalize eval output: strip spaces and replace OTP 26+ binary
+%% representation (#Bin<...> instead of <<...>>).
+normalize_eval(Str) ->
+    strip_spaces(re:replace(Str, "#Bin<([^>]*)>", "<<\\1>>",
+                            [global, {return, list}])).
+
 lookup_config(Key,Config) ->
     case lists:keysearch(Key,1,Config) of
     {value,{Key,Val}} ->
@@ -1015,6 +1025,8 @@ rebar3_command(Dir, Command, [debug]) ->
 git_checkout(Dir, Tag) ->
     %% restore any files modified by fix_git_protocol before switching tags
     _ = sh("git checkout -- rebar.config rebar.lock 2>/dev/null; true", [], Dir),
+    %% clean compiled relapp to avoid stale .app files from previous version
+    _ = sh("rm -rf _build/default/lib/relapp 2>/dev/null; true", [], Dir),
     Result = sh("git checkout " ++ Tag, [], Dir),
     %% GitHub disabled the git:// protocol, replace with https://
     %% in rebar.config and rebar.lock if present
