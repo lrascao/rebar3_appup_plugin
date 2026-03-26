@@ -62,6 +62,18 @@ do(State) ->
                             ?DEFAULT_RELEASE_DIR]),
     CurrentRelPath = filename:join([RelDir, Name]),
 
+    %% check if the release has been assembled yet (start_erl.data exists)
+    %% when running as a pre-hook for tar, the release may not exist yet
+    StartErlData = filename:join([CurrentRelPath, "releases", "start_erl.data"]),
+    case filelib:is_file(StartErlData) of
+        false ->
+            rebar_api:debug("release not yet assembled, skipping appup tar", []),
+            {ok, State};
+        true ->
+            do_tar(State, Name, RelDir, CurrentRelPath)
+    end.
+
+do_tar(State, Name, RelDir, CurrentRelPath) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     LibDir = filename:join([CurrentBaseDir, "lib"]),
 
