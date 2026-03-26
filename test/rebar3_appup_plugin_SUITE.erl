@@ -105,7 +105,7 @@ end_per_testcase(_Func, Config) ->
     Apps = proplists:get_value(apps, SuiteConfig),
     %% kill any running relapp nodes left over from failed tests
     os:cmd("pkill -f '[-]sname relapp' 2>/dev/null || true"),
-    timer:sleep(2000),
+    wait_for_relapp_exit(),
     lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
@@ -852,7 +852,7 @@ release_upgrade_downgrade(RelDir, AppName,
     PrivDir = lookup_config(priv_dir, Config),
     %% ensure no stale relapp nodes are running before starting a new one
     os:cmd("pkill -f '[-]sname relapp' 2>/dev/null || true"),
-    timer:sleep(1000),
+    wait_for_relapp_exit(),
     %% deploy the from version
     DeployDir = filename:join(PrivDir, FromVersion),
     ok = filelib:ensure_dir(filename:join(DeployDir, "dummy")),
@@ -939,6 +939,19 @@ wait_for_node_stop(DeployDir) ->
             timer:sleep(1000),
             wait_for_node_stop(DeployDir);
         _ -> ok
+    end.
+
+wait_for_relapp_exit() ->
+    wait_for_relapp_exit(10).
+
+wait_for_relapp_exit(0) ->
+    ok;
+wait_for_relapp_exit(Retries) ->
+    case os:cmd("pgrep -f '[-]sname relapp' 2>/dev/null") of
+        [] -> ok;
+        _ ->
+            timer:sleep(500),
+            wait_for_relapp_exit(Retries - 1)
     end.
 
 get_app_version(App, DeployDir) ->
