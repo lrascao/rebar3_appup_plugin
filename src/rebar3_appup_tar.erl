@@ -62,6 +62,18 @@ do(State) ->
                             ?DEFAULT_RELEASE_DIR]),
     CurrentRelPath = filename:join([RelDir, Name]),
 
+    %% check if the release has been assembled yet (start_erl.data exists)
+    %% when running as a pre-hook for tar, the release may not exist yet
+    StartErlData = filename:join([CurrentRelPath, "releases", "start_erl.data"]),
+    case filelib:is_file(StartErlData) of
+        false ->
+            rebar_api:debug("release not yet assembled, skipping appup tar", []),
+            {ok, State};
+        true ->
+            do_tar(State, Name, RelDir, CurrentRelPath)
+    end.
+
+do_tar(State, Name, RelDir, CurrentRelPath) ->
     CurrentBaseDir = rebar_dir:base_dir(State),
     LibDir = filename:join([CurrentBaseDir, "lib"]),
 
@@ -298,7 +310,15 @@ do_state_record_migration(Module,
     case compile:forms(Forms, CompileInfo ++ [binary, debug_info, return]) of
       {ok, Module, Binary, _Warnings} ->
         ToBeam = proplists:get_value(beam, ToData),
-        ok = file:write_file(ToBeam, Binary);
+        ok = file:write_file(ToBeam, Binary),
+        %% also write the injected beam to the lib dir so that if
+        %% the release is re-assembled (rebar3 3.22+), the injected
+        %% beam is picked up instead of the original
+        LibDir = proplists:get_value(lib_dir, Opts),
+        App = proplists:get_value(app, Opts),
+        LibBeam = filename:join([LibDir, App, "ebin",
+                                 atom_to_list(Module) ++ ".beam"]),
+        ok = file:write_file(LibBeam, Binary);
       {error, Errors, Warnings} ->
         rebar_api:abort("code conversion injection failed due to ~p, warnings: ~p",
           [Errors, Warnings])
@@ -318,6 +338,11 @@ apply_version_record_name(Name, Version) ->
     %% follow the exprecs format (eg. <record>__<version>)
     list_to_atom(atom_to_list(Name) ++ "__" ++ Version).
 
+%% Increment a line number, handling both integer (OTP < 24) and
+%% {Line, Column} tuple (OTP >= 24) formats.
+inc_line({Line, Col}) when is_integer(Line) -> {Line + 1, Col};
+inc_line(Line) when is_integer(Line) -> Line + 1.
+
 %% @spec apply_record_line(_,{'attribute',_,'record',{atom(),_}}) -> {'attribute',_,'record',{atom(),_}}.
 apply_record_line(L, {attribute, _, record, RecordDef}) ->
     {attribute, L, record, RecordDef}.
@@ -335,7 +360,7 @@ inject_record(RecordName, RecordAbst, Forms0) ->
                           apply_record_name(RecordName, RecordAbst));
                    (Form) -> Form
                 end, Forms0),
-    Forms ++ [{eof, L0 + 1}].
+    Forms ++ [{eof, inc_line(L0)}].
 
 %% @spec apply_method_line(_,{'function',_,_,_,_}) -> {'function',_,_,_,_}.
 apply_method_line(L, {function, _, Method, Arity, Clauses}) ->
@@ -349,7 +374,7 @@ inject_method(Form, Forms0) ->
                       apply_method_line(L, Form);
                     (F) -> F
                 end, Forms0),
-    Forms1 ++ [{eof, L + 1}].
+    Forms1 ++ [{eof, inc_line(L)}].
 
 %% @spec inject_code_change_convert_call([any(),...],[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> [any(),...].
 inject_code_change_convert_call(Forms, Opts) ->

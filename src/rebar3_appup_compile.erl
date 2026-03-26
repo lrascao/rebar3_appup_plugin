@@ -70,7 +70,7 @@ format_error(Reason) ->
 %% ===================================================================
 
 process_app(AppInfo, State) ->
-    Vsn = rebar_app_info:original_vsn(AppInfo),
+    Vsn = rebar3_appup_utils:vsn(AppInfo),
     Sources = find_appup_src_files(AppInfo),
     lists:foreach(fun(Source) ->
                     case filelib:is_file(Source) of

@@ -18,7 +18,7 @@
 # =============================================================================
 # Verify that the programs we need to run are installed on this system
 # =============================================================================
-REBAR3=./rebar3
+REBAR3 ?= $(shell which rebar3)
 ifeq ($(REBAR3),)
 $(error "Rebar3 not available on this system")
 endif
@@ -33,17 +33,13 @@ all: deps compile
 # Rules to build the system
 # =============================================================================
 
-$(REBAR3):
-	wget https://s3.amazonaws.com/rebar3/rebar3
-	chmod u+x rebar3
-
-deps: $(REBAR3)
+deps:
 	- $(REBAR3) compile
 
-compile: $(REBAR3)
+compile:
 	- $(REBAR3) compile
 
-clean: $(REBAR3)
+clean:
 	- $(REBAR3) clean
 
 update:
@@ -53,7 +49,7 @@ test: compile
 	rm -rf _build/test
 	$(REBAR3) ct
 
-dialyzer: $(REBAR3)
+dialyzer:
 	- $(REBAR3) dialyzer
 
 distclean: clean
