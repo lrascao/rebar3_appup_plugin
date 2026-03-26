@@ -73,9 +73,6 @@ init_per_suite(Config) ->
                                                [SrcDir]),
                                  [], DataDir),
                     RelDir = filename:join([DataDir, App]),
-                    {ok, _} = sh(io_lib:format("cp -f rebar3 ~s",
-                                               [RelDir]),
-                                 [], SrcDir),
                     {ok, _} = sh("mkdir -p _checkouts", [], RelDir),
                     CheckoutsDir = filename:join([RelDir, "_checkouts"]),
                     {ok, _} = sh(io_lib:format("ln -s ~s/rebar3_appup_plugin rebar3_appup_plugin",
@@ -106,10 +103,15 @@ end_per_testcase(_Func, Config) ->
     PrivDir = lookup_config(priv_dir, Config),
     SuiteConfig = ct:get_config(config),
     Apps = proplists:get_value(apps, SuiteConfig),
+    %% kill any running relapp nodes left over from failed tests
+    os:cmd("pkill -f '[-]sname relapp' 2>/dev/null || true"),
+    wait_for_relapp_exit(),
     lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
-                    {ok, _} = sh("rm -rf _build/default/lib/relapp/ebin/relapp.appup", [], Dir)
+                    %% clean compiled relapp to avoid stale .app and .appup
+                    %% files across test cases (different git tags)
+                    {ok, _} = sh("rm -rf _build/default/lib/relapp", [], Dir)
                   end, Apps),
     {ok, _} = sh("rm -rf " ++ PrivDir, [], DataDir),
     global:unregister_name(rebar3_appup_plugin_global_logger),
@@ -264,14 +266,14 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                             {ok, Srv2State0} = sh("./bin/relapp eval "
                                               "\"sys:get_state(relapp_srv2).\"",
                                               [], DeployDir),
-                            true = (Srv2State0 =:= "{state,0}"),
+                            true = (strip_spaces(Srv2State0) =:= "{state,0}"),
                             sh("./bin/relapp eval "
                                "\"relapp_srv2:set_state({state, 42}).\"",
                                [], DeployDir),
                             {ok, Srv2State1} = sh("./bin/relapp eval "
                                               "\"sys:get_state(relapp_srv2).\"",
                                               [], DeployDir),
-                            true = (Srv2State1 =:= "{state,42}"),
+                            true = (strip_spaces(Srv2State1) =:= "{state,42}"),
                             State
                        end,
     AfterUpgradeFun = fun(DeployDir, State) ->
@@ -279,7 +281,7 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                                              "\"sys:get_state(relapp_srv2).\"",
                                              [], DeployDir),
                             log("state: ~p\n", [Srv2State]),
-                            true = (Srv2State =:= "{state,42,<<>>,<<>>}"),
+                            true = (normalize_eval(Srv2State) =:= "{state,42,<<>>,<<>>}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
@@ -287,7 +289,7 @@ add_fields_auto_gen_server_state_appup(Config) when is_list(Config) ->
                                              "\"sys:get_state(relapp_srv2).\"",
                                              [], DeployDir),
                             log("state: ~p\n", [Srv2State]),
-                            true = (Srv2State =:= "{state,42}"),
+                            true = (strip_spaces(Srv2State) =:= "{state,42}"),
                             State
                         end,
     ok = upgrade_downgrade("relapp1", ["1.0.11", "1.0.12"],
@@ -330,9 +332,10 @@ simple_module_use(doc) -> ["Generate an appup for an upgrade "
 simple_module_use(suite) -> [];
 simple_module_use(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
-                            {ok, "{ok,arg}"} = sh("./bin/relapp eval "
+                            {ok, Result} = sh("./bin/relapp eval "
                                             "\"relapp_m1:test(arg).\"",
                                             [], DeployDir),
+                            true = (strip_spaces(Result) =:= "{ok,arg}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
@@ -523,14 +526,14 @@ appup_src_extra_argument(Config) when is_list(Config) ->
                             {ok, Extra} = sh("./bin/relapp eval "
                                                   "\"relapp_srv:get_extra().\"",
                                                   [], DeployDir),
-                            true = (Extra =:= "{upgrade,42}"),
+                            true = (strip_spaces(Extra) =:= "{upgrade,42}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, Extra} = sh("./bin/relapp eval "
                                                   "\"relapp_srv:get_description_id().\"",
                                                   [], DeployDir),
-                            true = (Extra =:= "{ok,42}"),
+                            true = (strip_spaces(Extra) =:= "{ok,42}"),
                             State
                         end,
     ok = upgrade_downgrade("relapp1", ["1.0.18", "1.0.19"],
@@ -610,7 +613,7 @@ add_supervisor_worker(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, Res} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             {match, _} = re:run(Res, "relapp_srv3"),
                             State
@@ -618,7 +621,7 @@ add_supervisor_worker(Config) when is_list(Config) ->
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, "false"} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             State
                         end,
@@ -648,14 +651,14 @@ remove_supervisor_worker(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, "false"} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, Res} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             {match, _} = re:run(Res, "relapp_srv3"),
                             State
@@ -685,14 +688,14 @@ multiple_behaviours(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, "0"} =
                               sh("./bin/relapp eval "
-                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports))\"",
+                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports)).\"",
                                     [], DeployDir),
                             State
                         end,
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, "undefined"} =
                               sh("./bin/relapp eval "
-                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports))\"",
+                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports)).\"",
                                     [], DeployDir),
                             State
                       end,
@@ -813,7 +816,7 @@ upgrade_downgrade(App, [FromVersion, ToVersion | []],
     %% ensure that we have an expected appup file
     ExpectedAppup = check_appup(RelAppDir, "relapp", FromVersion, ToVersion),
     %% now generate the relup
-    {ok, _} = rebar3_command(RelAppDir, "relup"),
+    {ok, _} = rebar3_command(RelAppDir, "relup --relname relapp --relvsn " ++ ToVersion),
     {ok, _} = rebar3_command(RelAppDir, "tar"),
     %% and now actually perform it on a running release
     ok = release_upgrade_downgrade(RelAppDir, "relapp",
@@ -847,6 +850,9 @@ release_upgrade_downgrade(RelDir, AppName,
                           Hooks,
                           Config) ->
     PrivDir = lookup_config(priv_dir, Config),
+    %% ensure no stale relapp nodes are running before starting a new one
+    os:cmd("pkill -f '[-]sname relapp' 2>/dev/null || true"),
+    wait_for_relapp_exit(),
     %% deploy the from version
     DeployDir = filename:join(PrivDir, FromVersion),
     ok = filelib:ensure_dir(filename:join(DeployDir, "dummy")),
@@ -935,6 +941,19 @@ wait_for_node_stop(DeployDir) ->
         _ -> ok
     end.
 
+wait_for_relapp_exit() ->
+    wait_for_relapp_exit(10).
+
+wait_for_relapp_exit(0) ->
+    ok;
+wait_for_relapp_exit(Retries) ->
+    case os:cmd("pgrep -f '[-]sname relapp' 2>/dev/null") of
+        [] -> ok;
+        _ ->
+            timer:sleep(500),
+            wait_for_relapp_exit(Retries - 1)
+    end.
+
 get_app_version(App, DeployDir) ->
     case sh(io_lib:format(
             "./bin/relapp eval "
@@ -994,6 +1013,18 @@ log(Format, Args) ->
             io:format(Pid, Format, Args)
     end.
 
+%% Strip spaces from eval output for comparison.
+%% OTP 25+ formats terms with spaces after commas (e.g. "{state, 0}"
+%% instead of "{state,0}").
+strip_spaces(Str) ->
+    lists:filter(fun(C) -> C =/= $\s end, Str).
+
+%% Normalize eval output: strip spaces and replace OTP 26+ binary
+%% representation (#Bin<...> instead of <<...>>).
+normalize_eval(Str) ->
+    strip_spaces(re:replace(Str, "#Bin<([^>]*)>", "<<\\1>>",
+                            [global, {return, list}])).
+
 lookup_config(Key,Config) ->
     case lists:keysearch(Key,1,Config) of
     {value,{Key,Val}} ->
@@ -1011,7 +1042,31 @@ rebar3_command(Dir, Command, [debug]) ->
     sh("rebar3 " ++ Command, [{"DEBUG", "1"}], Dir).
 
 git_checkout(Dir, Tag) ->
-    sh("git checkout " ++ Tag, [], Dir).
+    %% restore any files modified by fix_git_protocol before switching tags
+    _ = sh("git checkout -- rebar.config rebar.lock 2>/dev/null; true", [], Dir),
+    %% clean compiled relapp to avoid stale .app files from previous version
+    _ = sh("rm -rf _build/default/lib/relapp 2>/dev/null; true", [], Dir),
+    Result = sh("git checkout " ++ Tag, [], Dir),
+    %% GitHub disabled the git:// protocol, replace with https://
+    %% in rebar.config and rebar.lock if present
+    fix_git_protocol(Dir),
+    Result.
+
+fix_git_protocol(Dir) ->
+    lists:foreach(fun(File) ->
+        Path = filename:join(Dir, File),
+        case file:read_file(Path) of
+            {ok, Bin} ->
+                case binary:match(Bin, <<"git://github.com">>) of
+                    nomatch -> ok;
+                    _ ->
+                        New = binary:replace(Bin, <<"git://github.com">>,
+                                             <<"https://github.com">>, [global]),
+                        file:write_file(Path, New)
+                end;
+            {error, _} -> ok
+        end
+    end, ["rebar.config", "rebar.lock"]).
 
 git_clone(Name, Url, Branch, Dir) ->
     sh("git clone -b " ++ Branch ++ " " ++ Url ++ " " ++ Name, [], Dir).
