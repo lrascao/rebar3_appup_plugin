@@ -330,6 +330,11 @@ apply_version_record_name(Name, Version) ->
     %% follow the exprecs format (eg. <record>__<version>)
     list_to_atom(atom_to_list(Name) ++ "__" ++ Version).
 
+%% Increment a line number, handling both integer (OTP < 24) and
+%% {Line, Column} tuple (OTP >= 24) formats.
+inc_line({Line, Col}) when is_integer(Line) -> {Line + 1, Col};
+inc_line(Line) when is_integer(Line) -> Line + 1.
+
 %% @spec apply_record_line(_,{'attribute',_,'record',{atom(),_}}) -> {'attribute',_,'record',{atom(),_}}.
 apply_record_line(L, {attribute, _, record, RecordDef}) ->
     {attribute, L, record, RecordDef}.
@@ -347,7 +352,7 @@ inject_record(RecordName, RecordAbst, Forms0) ->
                           apply_record_name(RecordName, RecordAbst));
                    (Form) -> Form
                 end, Forms0),
-    Forms ++ [{eof, L0 + 1}].
+    Forms ++ [{eof, inc_line(L0)}].
 
 %% @spec apply_method_line(_,{'function',_,_,_,_}) -> {'function',_,_,_,_}.
 apply_method_line(L, {function, _, Method, Arity, Clauses}) ->
@@ -361,7 +366,7 @@ inject_method(Form, Forms0) ->
                       apply_method_line(L, Form);
                     (F) -> F
                 end, Forms0),
-    Forms1 ++ [{eof, L + 1}].
+    Forms1 ++ [{eof, inc_line(L)}].
 
 %% @spec inject_code_change_convert_call([any(),...],[{'app',[any()]} | {'lib_dir',binary() | [any()]} | {'plugin_dir',_} | {'rel_dir',binary() | [any()]} | {'version',_},...]) -> [any(),...].
 inject_code_change_convert_call(Forms, Opts) ->
