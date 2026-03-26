@@ -103,6 +103,9 @@ end_per_testcase(_Func, Config) ->
     PrivDir = lookup_config(priv_dir, Config),
     SuiteConfig = ct:get_config(config),
     Apps = proplists:get_value(apps, SuiteConfig),
+    %% kill any running relapp nodes left over from failed tests
+    _ = sh("pkill -f '[-]sname relapp' 2>/dev/null; true", [], DataDir),
+    timer:sleep(2000),
     lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
@@ -847,6 +850,9 @@ release_upgrade_downgrade(RelDir, AppName,
                           Hooks,
                           Config) ->
     PrivDir = lookup_config(priv_dir, Config),
+    %% ensure no stale relapp nodes are running before starting a new one
+    _ = sh("pkill -f '[-]sname relapp' 2>/dev/null; true", [], PrivDir),
+    timer:sleep(1000),
     %% deploy the from version
     DeployDir = filename:join(PrivDir, FromVersion),
     ok = filelib:ensure_dir(filename:join(DeployDir, "dummy")),
