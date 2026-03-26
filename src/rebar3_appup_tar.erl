@@ -310,7 +310,15 @@ do_state_record_migration(Module,
     case compile:forms(Forms, CompileInfo ++ [binary, debug_info, return]) of
       {ok, Module, Binary, _Warnings} ->
         ToBeam = proplists:get_value(beam, ToData),
-        ok = file:write_file(ToBeam, Binary);
+        ok = file:write_file(ToBeam, Binary),
+        %% also write the injected beam to the lib dir so that if
+        %% the release is re-assembled (rebar3 3.22+), the injected
+        %% beam is picked up instead of the original
+        LibDir = proplists:get_value(lib_dir, Opts),
+        App = proplists:get_value(app, Opts),
+        LibBeam = filename:join([LibDir, App, "ebin",
+                                 atom_to_list(Module) ++ ".beam"]),
+        ok = file:write_file(LibBeam, Binary);
       {error, Errors, Warnings} ->
         rebar_api:abort("code conversion injection failed due to ~p, warnings: ~p",
           [Errors, Warnings])
