@@ -39,3 +39,10 @@ jobs:
       run: make compile
     - name: Test
       run: make ci
+    - name: Upload CT logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ct-logs-otp-${{ matrix.combo.otp-version }}-${{ github.run_id }}
+        path: _build/test/logs/
+        retention-days: 5
