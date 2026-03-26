@@ -106,7 +106,9 @@ end_per_testcase(_Func, Config) ->
     lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
                     {ok, _} = sh("rm -rf _build/default/rel", [], Dir),
-                    {ok, _} = sh("rm -rf _build/default/lib/relapp/ebin/relapp.appup", [], Dir)
+                    %% clean compiled relapp to avoid stale .app and .appup
+                    %% files across test cases (different git tags)
+                    {ok, _} = sh("rm -rf _build/default/lib/relapp", [], Dir)
                   end, Apps),
     {ok, _} = sh("rm -rf " ++ PrivDir, [], DataDir),
     global:unregister_name(rebar3_appup_plugin_global_logger),
@@ -327,9 +329,12 @@ simple_module_use(doc) -> ["Generate an appup for an upgrade "
 simple_module_use(suite) -> [];
 simple_module_use(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
-                            {ok, "{ok,arg}"} = sh("./bin/relapp eval "
+                            {ok, Result} = sh("./bin/relapp eval "
                                             "\"relapp_m1:test(arg).\"",
                                             [], DeployDir),
+                            %% OTP 25+ formats tuples with spaces after commas
+                            true = (Result =:= "{ok,arg}" orelse
+                                    Result =:= "{ok, arg}"),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
