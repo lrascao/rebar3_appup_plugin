@@ -104,7 +104,7 @@ end_per_testcase(_Func, Config) ->
     SuiteConfig = ct:get_config(config),
     Apps = proplists:get_value(apps, SuiteConfig),
     %% kill any running relapp nodes left over from failed tests
-    _ = sh("pkill -f '[-]sname relapp' 2>/dev/null; true", [], DataDir),
+    os:cmd("pkill -f '[-]sname relapp' 2>/dev/null || true"),
     timer:sleep(2000),
     lists:foreach(fun({App, _, _}) ->
                     Dir = filename:join(DataDir, App),
@@ -613,7 +613,7 @@ add_supervisor_worker(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, Res} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             {match, _} = re:run(Res, "relapp_srv3"),
                             State
@@ -621,7 +621,7 @@ add_supervisor_worker(Config) when is_list(Config) ->
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, "false"} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             State
                         end,
@@ -651,14 +651,14 @@ remove_supervisor_worker(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, "false"} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             State
                       end,
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, Res} =
                               sh("./bin/relapp eval "
-                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup))\"",
+                                    "\"lists:keyfind(relapp_srv3, 1, supervisor:which_children(relapp_sup)).\"",
                                     [], DeployDir),
                             {match, _} = re:run(Res, "relapp_srv3"),
                             State
@@ -688,14 +688,14 @@ multiple_behaviours(Config) when is_list(Config) ->
     AfterUpgradeFun = fun(DeployDir, State) ->
                             {ok, "0"} =
                               sh("./bin/relapp eval "
-                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports))\"",
+                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports)).\"",
                                     [], DeployDir),
                             State
                         end,
     AfterDowngradeFun = fun(DeployDir, State) ->
                             {ok, "undefined"} =
                               sh("./bin/relapp eval "
-                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports))\"",
+                                    "\"proplists:get_value(helper_method, relapp_app_sup:module_info(exports)).\"",
                                     [], DeployDir),
                             State
                       end,
@@ -851,7 +851,7 @@ release_upgrade_downgrade(RelDir, AppName,
                           Config) ->
     PrivDir = lookup_config(priv_dir, Config),
     %% ensure no stale relapp nodes are running before starting a new one
-    _ = sh("pkill -f '[-]sname relapp' 2>/dev/null; true", [], PrivDir),
+    os:cmd("pkill -f '[-]sname relapp' 2>/dev/null || true"),
     timer:sleep(1000),
     %% deploy the from version
     DeployDir = filename:join(PrivDir, FromVersion),

@@ -186,8 +186,18 @@ find_app_by_name(Name, Apps) ->
 
 -spec vsn(AppInfo :: term()) -> string().
 vsn(AppInfo) ->
-    case rebar_app_info:original_vsn(AppInfo) of
-        Vsn when is_binary(Vsn) -> binary_to_list(Vsn);
-        Vsn when is_list(Vsn) -> Vsn
+    %% Use the resolved version from the compiled .app file when available,
+    %% since original_vsn may return unresolved values like "git".
+    EbinDir = rebar_app_info:ebin_dir(AppInfo),
+    Name = binary_to_list(rebar_app_info:name(AppInfo)),
+    AppFile = filename:join(EbinDir, Name ++ ".app"),
+    case file:consult(AppFile) of
+        {ok, [{application, _, Props}]} ->
+            proplists:get_value(vsn, Props);
+        _ ->
+            case rebar_app_info:original_vsn(AppInfo) of
+                Vsn when is_binary(Vsn) -> binary_to_list(Vsn);
+                Vsn when is_list(Vsn) -> Vsn
+            end
     end.
 
